@@ -1,0 +1,35 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Test and type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local logs
+*.log
+
+# OS/editor noise
+.DS_Store
+
+# Generated project outputs
+factor_layer/factor_agent/output/audit_log.jsonl
+factor_layer/factor_agent/output/MinerU_markdown_*.md
+factor_layer/factor_agent/output/MinerU_markdown_*.yaml
+factor_layer/factor_indicators/evaluation_output/
+raw_data_layer/raw_data_fetching/download_results.csv
+
+# User local workspace
+users_workspace/whh_workspace/
