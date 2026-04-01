@@ -6,19 +6,17 @@
 - 分层回测：10 组分层收益（可按 N 期转成单期收益）
 - 多空持有回测：严格仓位状态机（-1/0/+1）
 - 交易成本回测：支持单边手续费（当前默认 0.00002）
-- 可视化仪表盘：Streamlit + Plotly
 
 文档面向下一个开发者，强调可维护性、数据契约、关键公式和扩展点。
 
 ## 2. 当前目录结构
 - .venv/: Python 虚拟环境
 - NQ/: 原始分钟级分区数据（按月）
-- NQ.parquet: 汇总行情（历史存在）
+- NQ.parquet: 汇总行情（data, open, high, low, close, volume, average, barCount, Contract, trade_month）
 - NQ_vwap.parquet: 回测用 VWAP 序列（timestamp, vwap）
 - factor_output.parquet: 因子输出（timestamp, factor）
 - factor_vwap_reversion.py: 因子生成脚本
-- factor_evaluation_framework.py: 核心评估框架
-- factor_eval_dashboard.py: Streamlit 可视化看板
+- factor_evaluation_framework.py: 核心评估框架（含市场状态标签 & 分状态分析器）
 - evaluation_output/: 评估结果导出目录（包含历史版本输出）
 
 说明：evaluation_output 内可见旧 horizon 文件（如 h15/h30），当前框架默认 horizon 为 1/5/10/20。
@@ -35,11 +33,6 @@
 - 加载 factor_output.parquet 和 NQ_vwap.parquet
 - 对每个 horizon 计算完整指标
 - 输出 evaluation_output 下的 CSV
-
-### 3.3 可视化面板
-执行 factor_eval_dashboard.py（streamlit run）：
-- 展示无手续费与有手续费（单边）两套持有回测结果
-- 支持 N=1/5/10/20 的对比
 
 ## 4. 数据契约
 ### 4.1 输入数据
@@ -62,6 +55,19 @@
 - 自带日度 Spearman IC 报告（独立于评估框架）
 
 ## 5.2 评估框架模块（factor_evaluation_framework.py）
+
+框架包含以下核心类与模块：
+
+| 类 / 函数 | 职责 |
+|---|---|
+| `EvalConfig` | 全局评估参数（horizons, z-score 窗口, 分层数等） |
+| `MarketStatusLabel` | 市场状态标签生成器（波动率 & 日内时段） |
+| `Predictivity` | IC / RankIC 计算 |
+| `Backtest` | 分层回测 + 多空持有回测 |
+| `StatusAnalyzer` | 分状态因子表现分析（集成上述所有组件） |
+| `evaluate_horizon` / `run_evaluation` | 跨 horizon 编排入口 |
+
+### 5.2.1 EvalConfig
 主要配置由 EvalConfig 控制：
 - horizons: 默认 (1, 5, 10, 20)
 - zscore_window: 默认 200
@@ -70,6 +76,73 @@
 - min_obs_per_day: 默认 30
 - holding_fee_rate: 默认 0.00002（单边手续费）
 
+### 5.2.2 MarketStatusLabel
+用于为每一条分钟 bar 生成市场状态分类标签，所有计算严格使用 **t 及之前的数据**，不引入未来函数。
+
+**初始化输入**：NQ.parquet（需包含 data, close, volume 列）
+
+**两种标签方法**：
+
+#### volatility_regime — 波动率状态
+- 标签: `LV`（低波）/ `MV`（中波）/ `HV`（高波）
+- 计算步骤：
+  1. 计算 1-bar 对数收益率 `ln(close_t / close_{t-1})`
+  2. 滚动标准差（窗口=120 bars，约 2 小时）→ 实现波动率
+  3. 滚动百分位排名（窗口=7200 bars，约 1 周）
+  4. 百分位 < 1/3 → LV；1/3 ≤ 百分位 < 2/3 → MV；百分位 ≥ 2/3 → HV
+- 窗口不足时标签为 `pd.NA`
+
+#### intraday_session — 日内时段
+- 标签: `OPEN` / `MIDDAY` / `CLOSE` / `OVERNIGHT`
+- 基于 NQ 期货 CME Globex 常规交易时间（ET）：
+  - OPEN:       09:30–10:00（开盘前 30 分钟）
+  - MIDDAY:     10:00–15:30
+  - CLOSE:      15:30–16:00（收盘前 30 分钟）
+  - OVERNIGHT:  其余时段（盘前 / 盘后 / 夜盘）
+- 纯时间标签，零计算，无未来函数风险
+
+**使用方式**：
+```python
+labeler = MarketStatusLabel.from_parquet(Path('NQ.parquet'))
+vol_labels  = labeler.volatility_regime()   # pd.Series[str]
+sess_labels = labeler.intraday_session()    # pd.Series[str]
+```
+
+### 5.2.3 StatusAnalyzer
+用于分析在**不同市场状态**下某一因子的表现。
+
+**预处理流程**（与主 `evaluate_horizon` 完全一致）：
+1. 时间对齐（`align_on_overlap_reindex`）
+2. 滚动 z-score 标准化
+3. 日内 winsorize 去极值
+4. 单期前瞻收益：factor_t → `vwap[t+2]/vwap[t+1] − 1`（即 t 时刻因子对应 t+1→t+2 的收益）
+
+**分状态分析**：按状态标签分组后分别计算：
+
+| 指标类别 | 具体指标 |
+|---|---|
+| IC 分析 | ic_mean, ic_std, icir, ic_win_rate, ic_n_days |
+| Rank IC 分析 | rank_ic_mean, rank_ic_std, rank_icir, rank_ic_win_rate |
+| 多空回测（无费） | holding_sharpe, holding_max_drawdown, holding_win_rate, holding_total_return |
+| 多空回测（含费） | 同上 _with_cost 后缀 |
+
+**使用方式**：
+```python
+sa = StatusAnalyzer.from_parquet(
+    factor_path, vwap_path, market_path,
+    status_method='volatility_regime',  # 或 'intraday_session'
+)
+results = sa.analyze()
+StatusAnalyzer.print_summary(results)
+df = sa.summary_dataframe(results)
+```
+
+也可传入自定义标签序列：
+```python
+sa = StatusAnalyzer(factor_series, vwap_series, custom_label_series)
+```
+
+### 5.2.4 主评估流程
 关键流程：
 1. rolling_zscore 预处理因子
 2. 构建前瞻收益 target_ret_n
@@ -80,19 +153,6 @@
 7. 持有回测（无手续费）
 8. 持有回测（有手续费）
 9. 汇总 summary 与各类序列结果
-
-## 5.3 可视化模块（factor_eval_dashboard.py）
-页面包含：
-1. Metrics Decay by N
-2. Layered Backtest 单期收益柱图
-3. Long-Short 衰减曲线
-4. Holding PnL Curves（无手续费）+ 各 N 指标
-5. Holding PnL Curves After Fee（有手续费）+ 各 N 指标
-6. Data Tables（含手续费前后明细）
-
-缓存机制：
-- 使用 st.cache_data
-- 通过 _CACHE_VERSION 手动失效缓存（当前 v9）
 
 ## 6. 关键计算口径
 ### 6.1 前瞻收益口径（因子 t 时刻）
@@ -142,7 +202,9 @@ holding_backtest_stats 返回：
   - 反手记 2
 
 ## 7. 返回结果结构（开发接口约定）
-run_evaluation(cfg) 返回 Dict[horizon, payload]，payload 包含：
+
+### 7.1 run_evaluation(cfg)
+返回 Dict[horizon, payload]，payload 包含：
 - summary: 汇总字典
 - daily_ic: 日度 IC 序列
 - daily_rank_ic: 日度 RankIC 序列
@@ -157,15 +219,31 @@ summary 额外包含：
 - holding_total_return_with_cost
 - 以及手续费统计的 with_cost 后缀字段
 
+### 7.2 StatusAnalyzer.analyze()
+返回 Dict[status_value, payload]，payload 包含：
+- n_bars: 该状态下的 bar 数量
+- ic_summary: IC 汇总字典（mean, std, ir, win_rate, n_days）
+- rank_ic_summary: Rank IC 汇总字典
+- daily_ic: 日度 IC 序列
+- daily_rank_ic: 日度 Rank IC 序列
+- holding_pnl: 无手续费持有序列
+- holding_stats: 无手续费统计
+- holding_pnl_with_cost: 有手续费持有序列
+- holding_stats_with_cost: 有手续费统计
+- holding_total_return / holding_total_return_with_cost
+
+`summary_dataframe()` 方法可将上述结果转为单张 pd.DataFrame，便于导出和对比。
+
 ## 8. 已知问题与注意事项
-- 端口冲突：8501 可能被占用，启动 Streamlit 失败时切换端口
-- 大数据量图表：原始分钟级曲线体量大，dashboard 已对净值按日下采样
-- 缓存一致性：指标字段变更后务必提升 _CACHE_VERSION
 - evaluation_output 历史文件混有旧 horizon，分析时注意版本口径
 - 交易成本非常敏感：高频换手会显著侵蚀收益
 
 ## 9. 推荐的后续开发任务
-- 增加多费率敏感性面板（0, 2e-5, 5e-5, 1e-4）
+- 扩展 MarketStatusLabel 增加更多市场状态维度：
+  - 趋势/方向状态（基于滚动窗口收益率的符号或均线关系）
+  - 成交量状态（基于滚动成交量相对于同时段历史均值的偏离）
+  - 跳空/Gap 状态（基于当日开盘价与前日收盘价的跳空幅度）
+  - 日内已实现动量（基于从当日开盘到当前 bar 的累计收益方向与幅度）
 - 将 save_results 扩展为同时导出有手续费版本持有曲线
 - 增加单元测试：
   - 状态机仓位边界测试
@@ -175,14 +253,10 @@ summary 额外包含：
 - 增加异常监控与日志（输入列缺失、时间戳异常、NaN 比例）
 
 ## 10. 快速交接清单
-- 确认 Python 环境与依赖可用（pandas, numpy, streamlit, plotly, pyarrow）
-- 先运行 framework 脚本，确认 CSV 输出
-- 再运行 dashboard，确认 5 个可视区块均正常
+- 确认 Python 环境与依赖可用（pandas, numpy, pyarrow）
+- 运行 framework 脚本，确认 CSV 输出
 - 验证无手续费与有手续费两套统计均包含 holding_avg_daily_trades
-- 修改任何统计字段后同步更新：
-  - dashboard 的列定义
-  - metric_name_map
-  - _CACHE_VERSION
 
 ---
 文档生成时间：2026-03-27
+最后更新时间：2026-03-31（新增 MarketStatusLabel、StatusAnalyzer 模块说明）

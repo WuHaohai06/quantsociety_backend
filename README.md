@@ -67,9 +67,16 @@
 
 如果你是第一次进入这个仓库，建议按下面顺序了解：
 
-1. `factor_layer/factor_engine/README.md`：先理解因子表达和执行框架。
-2. `factor_layer/factor_agent/README.md`：再看 Agent 如何产出 YAML 配置。
-3. `factor_layer/factor_indicators/PROJECT_HANDOFF_AI.md`：最后看因子评估与可视化链路。
+1. [IMPLEMENTED_WORKFLOWS.md](IMPLEMENTED_WORKFLOWS.md)：先看已经落地的工作流和文件流总览。
+2. `factor_layer/factor_engine/README.md`：再理解因子表达和执行框架。
+3. `factor_layer/factor_agent/README.md`：再看 Agent 如何产出 YAML 配置。
+4. `factor_layer/factor_indicators/PROJECT_HANDOFF_AI.md`：最后看因子评估与可视化链路。
+
+## 工作流文档
+
+仓库里已经实现的功能串联关系、上下游文件流、当前断点说明，见：
+
+- [IMPLEMENTED_WORKFLOWS.md](IMPLEMENTED_WORKFLOWS.md)
 
 ## 快速开始
 
