@@ -11,7 +11,6 @@
 
 ## 2. 当前目录结构
 - .venv/: Python 虚拟环境
-- NQ/: 原始分钟级分区数据（按月）
 - NQ.parquet: 汇总行情（data, open, high, low, close, volume, average, barCount, Contract, trade_month）
 - NQ_vwap.parquet: 回测用 VWAP 序列（timestamp, vwap）
 - factor_output.parquet: 因子输出（timestamp, factor）
@@ -19,12 +18,14 @@
 - factor_evaluation_framework.py: 核心评估框架（含市场状态标签 & 分状态分析器）
 - evaluation_output/: 评估结果导出目录（包含历史版本输出）
 
-说明：evaluation_output 内可见旧 horizon 文件（如 h15/h30），当前框架默认 horizon 为 1/5/10/20。
+说明：
+- evaluation_output 内可见旧 horizon 文件（如 h15/h30），当前框架默认 horizon 为 1/5/10/20。
+- 原始分钟级分区数据目录 `NQ/` 已不存在；factor_vwap_reversion.py 中 `DATA_DIR` 仍指向该路径，运行前需重建该目录或修改路径。
 
 ## 3. 运行入口
 ### 3.1 因子生成
 执行 factor_vwap_reversion.py：
-- 读取 NQ 原始分钟数据
+- 读取 NQ 原始分钟数据（从 `NQ/` 分区目录，当前该目录已不存在，需重建或修改 `DATA_DIR`）
 - 计算日内累计 VWAP 偏离因子
 - 输出 factor_output.parquet
 
@@ -111,18 +112,18 @@ sess_labels = labeler.intraday_session()    # pd.Series[str]
 ### 5.2.3 StatusAnalyzer
 用于分析在**不同市场状态**下某一因子的表现。
 
-**预处理流程**（与主 `evaluate_horizon` 完全一致）：
+**预处理流程**（与主 `evaluate_horizon` 类似，但有以下差异：始终使用单期 horizon=1；不应用日尾不足 horizon 的剔除掩码 `_eligibility_mask_by_day`）：
 1. 时间对齐（`align_on_overlap_reindex`）
 2. 滚动 z-score 标准化
-3. 日内 winsorize 去极值
-4. 单期前瞻收益：factor_t → `vwap[t+2]/vwap[t+1] − 1`（即 t 时刻因子对应 t+1→t+2 的收益）
+3. 单期前瞻收益：factor_t → `vwap[t+2]/vwap[t+1] − 1`（即 t 时刻因子对应 t+1→t+2 的收益）
+4. 日内 winsorize 去极值（仅对因子 z-score，与前瞻收益计算互不依赖）
 
 **分状态分析**：按状态标签分组后分别计算：
 
 | 指标类别 | 具体指标 |
 |---|---|
 | IC 分析 | ic_mean, ic_std, icir, ic_win_rate, ic_n_days |
-| Rank IC 分析 | rank_ic_mean, rank_ic_std, rank_icir, rank_ic_win_rate |
+| Rank IC 分析 | rank_ic_mean, rank_ic_std, rank_icir, rank_ic_win_rate, rank_ic_n_days |
 | 多空回测（无费） | holding_sharpe, holding_max_drawdown, holding_win_rate, holding_total_return |
 | 多空回测（含费） | 同上 _with_cost 后缀 |
 
@@ -161,7 +162,7 @@ target_ret_n 使用 VWAP：
 - 形式为 vwap.shift(-(N+1)) / vwap.shift(-1) - 1
 
 ### 6.2 分层回测口径
-- 因子按横截面分 10 组
+- 因子按**滚动 lookback 窗口**（默认 1000 bars）内的分位数分 10 组（非全样本横截面），即每个 bar 仅参考其前 1000 条数据的分布进行分组
 - 先计算 N 期均值收益
 - 再折算为单期收益，便于不同 N 横向比较
 
@@ -174,7 +175,7 @@ target_ret_n 使用 VWAP：
 - 同时触发时多头优先
 
 ### 6.4 交易成本口径
-apply_holding_transaction_cost 中：
+`Backtest.apply_transaction_cost` 中：
 - 按仓位绝对变化收单边手续费
 - 单边费率：holding_fee_rate（默认 0.00002）
 - 每 bar 成本 = abs(delta_position) * fee_rate
@@ -186,7 +187,7 @@ apply_holding_transaction_cost 中：
 - 累计总收益 = 最终权益 - 1
 
 ### 6.6 持有回测统计指标
-holding_backtest_stats 返回：
+`Backtest.holding_stats` 返回：
 - holding_sharpe
 - holding_max_drawdown
 - holding_annual_return
@@ -259,4 +260,4 @@ summary 额外包含：
 
 ---
 文档生成时间：2026-03-27
-最后更新时间：2026-03-31（新增 MarketStatusLabel、StatusAnalyzer 模块说明）
+最后更新时间：2026-04-01（全量审查：修正目录结构、函数名称、分层回测口径、StatusAnalyzer 预处理差异说明）

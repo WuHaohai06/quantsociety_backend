@@ -6,11 +6,10 @@ factor:
   description: 财务比率 - PE 截面排名，排名越低代表估值越便宜
 
 data_source:
-  type: multi_parquet
-  root: /home/yluel/share/projects/massive_parquet/fundamentals/financials_ratios
-  timestamp_col: date
-  instrument_col: ticker
+  type: cleaned_parquet
+  root: /home/yluel/share/projects/massive_parquet/cleaned_massive_data/fundamentals/financials_ratios
   max_files: 3
+  # cleaned_parquet 默认使用 align_time / ticker
   # start_date: "2026-01-01"   # 可选：限定时间范围左端（行级过滤）
   # end_date:   "2026-12-31"   # 可选：限定时间范围右端（行级过滤）
 
@@ -19,3 +18,8 @@ backend:
 
 engine:
   enable_cache: true
+
+materialization:
+  lake_root: /tmp/factor_engine_examples_lake
+  factor_id: financials_ratios_rank_pe_v1
+  # author: your_name

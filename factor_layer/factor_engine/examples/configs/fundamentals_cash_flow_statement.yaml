@@ -6,11 +6,10 @@ factor:
   description: 现金流量表 - 经营活动现金流截面标准化，正值代表现金流强劲
 
 data_source:
-  type: multi_parquet
-  root: /home/yluel/share/projects/massive_parquet/fundamentals/cash_flow_statement
-  timestamp_col: period_end
-  instrument_col: tickers
+  type: cleaned_parquet
+  root: /home/yluel/share/projects/massive_parquet/cleaned_massive_data/fundamentals/cash_flow_statement
   max_files: 3
+  # cleaned_parquet 默认使用 align_time / ticker
   # start_date: "2010-01-01"   # 可选：限定时间范围左端（行级过滤）
   # end_date:   "2011-12-31"   # 可选：限定时间范围右端（行级过滤）
 
@@ -19,3 +18,8 @@ backend:
 
 engine:
   enable_cache: true
+
+materialization:
+  lake_root: /tmp/factor_engine_examples_lake
+  factor_id: cash_flow_zscore_operating_v1
+  # author: your_name

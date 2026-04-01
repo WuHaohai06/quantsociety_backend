@@ -42,16 +42,13 @@ from api.columns import col
 from api.factor import Factor
 from api.operators import rank, ts_mean, ts_std_dev, ts_delta
 from backend.pandas_backend import PandasBackend
+from logging_utils import ProgressLogger, configure_logging, get_logger
 from runtime.engine import FactorEngine
 from storage import ParquetMaterializer
 from storage.datasource import DataSource
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger("batch_materialize")
+configure_logging("INFO")
+logger = get_logger("examples.batch_materialize")
 
 # ============================================================================
 # 因子注册表：在此添加需要每日落盘的因子
@@ -166,6 +163,12 @@ def batch_materialize(
     logger.info("开始批量落盘：共 %d 个因子", len(factor_configs))
     logger.info("Lake 根目录：%s", mat.lake_root)
     logger.info("=" * 60)
+    progress = ProgressLogger(
+        logger,
+        desc="批量落盘",
+        total=len(factor_configs),
+        unit="factor",
+    )
 
     for i, config in enumerate(factor_configs, 1):
         factor_id = config["factor_id"]
@@ -199,11 +202,13 @@ def batch_materialize(
                 elapsed,
             )
             results["succeeded"].append(factor_id)
+            progress.advance(detail=f"{factor_id} -> ok")
 
         except Exception as e:
             elapsed = time.time() - t0
             logger.error("  ❌ 失败: %s — %s (%.2fs)", type(e).__name__, e, elapsed)
             results["failed"].append({"factor_id": factor_id, "error": str(e)})
+            progress.advance(detail=f"{factor_id} -> failed")
 
     # 汇总
     logger.info("=" * 60)

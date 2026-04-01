@@ -51,6 +51,8 @@ print(result["result"].head())
 1. 编写包含 `factor`、`data_source`、`backend`、`engine` 四个字段的 YAML 文件。
 2. 调用 `FactorEngine.run_from_config(path)` 或 `FactorEngine.from_config(path)` 获取引擎实例。
 
+如果希望配置文件直接完成计算到落盘，可以额外添加 `materialization` 段，然后调用 `FactorEngine.materialize_from_config(path)`，或运行 [examples/materialize_from_config.py](/home/yluel/share/projects/quantsociety_backend_project/factor_layer/factor_engine/examples/materialize_from_config.py)。
+
 **支持的数据源类型：**
 
 | 类型 | 说明 |
@@ -58,6 +60,8 @@ print(result["result"].head())
 | `parquet_kline` | K线格式 parquet，适用于 `us_stocks_sip` |
 | `multi_parquet` | 通用多文件 parquet，适用于各类 fundamentals |
 | `parquet` | 单文件或简单目录 parquet |
+| `cleaned_parquet` | 清洗层标准 parquet，默认读取 `align_time` + `ticker` |
+| `composite` | 组合数据源，以锚点源为基准对齐其他数据源的列空间 |
 
 **配置示例（日K线动量因子）：**
 
@@ -105,7 +109,91 @@ backend:
   type: pandas
 ```
 
-`examples/configs/` 目录下收录了覆盖全部 11 个数据集的配置文件（见下文[数据集列表](#数据集列表)）。
+**配置示例（cleaned parquet 单数据源）：**
+
+```yaml
+factor:
+  name: cleaned_day_aggs_rank_close
+  expr: rank(col("close"))
+  freq: 1d
+
+data_source:
+  type: cleaned_parquet
+  root: /data/cleaned_massive_data/us_stocks_sip/day_aggs_v1
+  # 默认使用 align_time / ticker，也可显式覆盖：
+  # timestamp_col: align_time
+  # instrument_col: ticker
+
+backend:
+  type: pandas
+```
+
+**配置示例（配置到落盘）：**
+
+```yaml
+factor:
+  name: cleaned_day_aggs_rank_ts_mean_close_3_v1
+  expr: rank(ts_mean(col("close"), 3))
+  freq: 1d
+
+data_source:
+  type: cleaned_parquet
+  root: /data/cleaned_massive_data/us_stocks_sip/day_aggs_v1
+
+backend:
+  type: pandas
+
+engine:
+  enable_cache: true
+
+materialization:
+  lake_root: /tmp/factor_engine_demo_lake
+  factor_id: cleaned_day_aggs_rank_ts_mean_close_3_v1
+  description: 配置驱动计算到落盘示例
+```
+
+执行方式：
+
+```bash
+cd factor_layer/factor_engine
+python examples/materialize_from_config.py examples/config_driven_materialize_factor.yaml
+```
+
+**配置示例（锚定日线价格并拼接基本面列空间）：**
+
+```yaml
+factor:
+  name: day_aggs_close_over_pe
+  expr: col("close") / col("pe")
+  freq: 1d
+
+data_source:
+  type: composite
+  anchor: price
+  anchor_column: close
+  aliases:
+    pe: fundamental.price_to_earnings
+  sources:
+    price:
+      type: cleaned_parquet
+      root: /data/cleaned_massive_data/us_stocks_sip/day_aggs_v1
+    fundamental:
+      type: multi_parquet
+      root: /data/fundamentals/financials_ratios
+      timestamp_col: date
+      instrument_col: ticker
+  joins:
+    fundamental:
+      method: asof_backward
+
+backend:
+  type: pandas
+
+engine:
+  enable_cache: true
+```
+
+`examples/configs/` 目录下收录了覆盖全部 11 个数据集的配置文件（见下文[数据集列表](#数据集列表)）。这些配置现在默认使用 `cleaned_parquet` 数据源风格，并额外包含可选的 `materialization` 段，可直接用于 `FactorEngine.materialize_from_config()`。
 
 ---
 
@@ -215,6 +303,7 @@ factor_engine/
 ├── storage/                    # 存储与数据源层
 │   ├── datasource.py           #   DataSource 抽象基类
 │   ├── kline_parquet_source.py #   KlineParquetSource（K线 parquet）
+│   ├── cleaned_parquet_source.py # CleanedParquetSource（清洗层 parquet）
 │   ├── parquet_source.py       #   ParquetSource（通用 parquet）
 │   ├── factory.py              #   build_data_source()
 │   ├── cache.py                #   CacheManager（列缓存）

@@ -6,11 +6,10 @@ factor:
   description: 融券兴趣 - 空头回补天数截面排名，越高代表做空压力越大
 
 data_source:
-  type: multi_parquet
-  root: /home/yluel/share/projects/massive_parquet/fundamentals/short_interest
-  timestamp_col: settlement_date
-  instrument_col: ticker
+  type: cleaned_parquet
+  root: /home/yluel/share/projects/massive_parquet/cleaned_massive_data/fundamentals/short_interest
   max_files: 3
+  # cleaned_parquet 默认使用 align_time / ticker
   # start_date: "2017-01-01"   # 可选：限定时间范围左端（行级过滤）
   # end_date:   "2018-06-30"   # 可选：限定时间范围右端（行级过滤）
 
@@ -19,3 +18,8 @@ backend:
 
 engine:
   enable_cache: true
+
+materialization:
+  lake_root: /tmp/factor_engine_examples_lake
+  factor_id: short_interest_rank_days_to_cover_v1
+  # author: your_name

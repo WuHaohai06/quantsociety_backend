@@ -26,7 +26,6 @@
 from __future__ import annotations
 
 import getpass
-import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -36,8 +35,9 @@ import pandas as pd
 
 from .catalog import FactorCatalog, compute_ir_hash
 from .exceptions import FactorNotFoundError
+from logging_utils import ProgressLogger, get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("storage.materializer")
 
 # ---------------------------------------------------------------------------
 # 默认作者
@@ -179,11 +179,19 @@ class ParquetMaterializer:
         factor_dir = self._lake_root / "factors" / factor_id
         df["_year"] = df["datetime"].dt.year
         partitions_written: list[int] = []
+        partition_years = sorted(int(year) for year in df["_year"].unique())
+        progress = ProgressLogger(
+            logger,
+            desc=f"落盘因子 {factor_id}",
+            total=len(partition_years),
+            unit="partition",
+        )
 
-        for year, group_df in df.groupby("_year"):
-            partition_df = group_df.drop(columns=["_year"])
+        for year in partition_years:
+            partition_df = df.loc[df["_year"] == year].drop(columns=["_year"])
             self._upsert_partition(factor_dir, int(year), partition_df)
             partitions_written.append(int(year))
+            progress.advance(detail=f"year={year}, rows={len(partition_df)}")
 
         # --- 5. 更新水位线 ---
         start_date = df["datetime"].min().isoformat()
@@ -279,6 +287,7 @@ class ParquetMaterializer:
         partition_dir = factor_dir / f"year={year}"
         partition_dir.mkdir(parents=True, exist_ok=True)
         parquet_path = partition_dir / "data.parquet"
+        existing_rows = 0
 
         # 读取已有数据
         if parquet_path.exists():
@@ -286,6 +295,7 @@ class ParquetMaterializer:
             # 确保列类型一致
             existing_df["asset"] = existing_df["asset"].astype("string")
             existing_df["value"] = existing_df["value"].astype("float32")
+            existing_rows = len(existing_df)
             combined = pd.concat([existing_df, new_df], ignore_index=True)
         else:
             combined = new_df
@@ -304,6 +314,14 @@ class ParquetMaterializer:
         tmp_path = partition_dir / ".data.parquet.tmp"
         combined.to_parquet(tmp_path, index=False, engine="pyarrow")
         os.replace(str(tmp_path), str(parquet_path))
+        logger.info(
+            "分区写入完成: factor_dir=%s, year=%s, existing_rows=%d, incoming_rows=%d, final_rows=%d",
+            factor_dir,
+            year,
+            existing_rows,
+            len(new_df),
+            len(combined),
+        )
 
     @staticmethod
     def _count_total_rows(factor_dir: Path) -> int:
