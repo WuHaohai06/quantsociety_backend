@@ -37,6 +37,7 @@ class SignalCombiner(BaseSignalGenerator):
             self.weights = [1.0 / len(signal_generators)] * len(signal_generators)
         else:
             total = sum(abs(w) for w in weights)
+            # 按绝对值归一，允许多空对冲类权重和为 0 的写法
             self.weights = [w / total for w in weights]
 
     def generate(
@@ -55,17 +56,17 @@ class SignalCombiner(BaseSignalGenerator):
         method = self.params.get("combine_method", "weighted_avg")
 
         if method == "rank_avg":
-            # 对每个信号做截面排名后加权
-            ranked = all_signals.rank(pct=True) * 2 - 1  # 映射到 [-1, 1]
+            # 单标的序列上按「时间截面」做 pct 秩，削弱量纲差异大的因子/技术信号
+            ranked = all_signals.rank(pct=True) * 2 - 1  # 每列约均匀落在 [-1,1]
             weights_arr = np.array(self.weights)
             composite = ranked.values @ weights_arr
         else:
-            # 加权平均
             weights_arr = np.array(self.weights)
+            # NaN 当 0 参与加权，避免某路信号预热期拖垮合成
             composite = all_signals.fillna(0.0).values @ weights_arr
 
         signal_out = pd.Series(
-            np.tanh(composite),
+            np.tanh(composite),  # 再压一层，与单路信号输出范围一致
             index=market_data.index,
             name=self.name,
         )

@@ -76,7 +76,7 @@ def generate_mock_target_position(
 
         positions[i] = current
 
-    # shift(1) 防未来函数
+    # 环形位移近似「上一 bar 信号本 bar 生效」；首 bar 置 0。正式策略请用 PositionMapper.apply_shift
     positions = np.roll(positions, 1)
     positions[0] = 0.0
     signal_values = np.roll(signal_values, 1)
@@ -100,13 +100,13 @@ def main():
     print("=" * 60)
 
     symbol = "000001.SZ"
+    # 单资产 alpha 包的上三级 = 仓库根下的 outputs，便于与 pipeline 默认输出目录一致
     output_dir = Path(__file__).parent.parent.parent / "outputs"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 生成 Mock 数据
     mock_df = generate_mock_target_position(symbol=symbol, periods=500)
 
-    # Schema 校验
+    # strict=True 会检查 target_position 值域；Mock 数据应已落在 [-1,1]
     errors = TargetPositionSchema.validate(mock_df)
     if errors:
         print("⚠️ Schema 校验警告:")

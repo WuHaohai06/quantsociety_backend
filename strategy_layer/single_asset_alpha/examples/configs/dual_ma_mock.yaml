@@ -1,0 +1,36 @@
+meta:
+  strategy_id: dual_ma_mock_demo
+  version: v1
+  description: Minimal single_asset_alpha config using mock market data and DualMA signal.
+
+instrument:
+  symbol: DEMO.SZ
+
+market_data:
+  mode: mock
+  mock_periods: 300
+  mock_start_date: 2023-01-01
+  mock_seed: 42
+
+signal:
+  type: dual_ma
+  name: DualMA
+  params:
+    fast_window: 5
+    slow_window: 20
+    ma_type: sma
+
+position_mapper:
+  type: threshold
+  name: ThresholdMapper
+  params:
+    long_entry_threshold: 0.5
+    long_exit_threshold: -0.15
+    allow_short: false
+    shift_bars: 1
+
+output:
+  output_dir: ../../../../outputs/single_asset_alpha/dual_ma_mock_demo
+  output_format: parquet
+  save_full_timeseries: true
+  save_debounced: true

@@ -16,10 +16,10 @@
 本包依赖 **`runtime.perf_config`**（`FACTOR_BACKTEST_EXECUTION_ENGINE` 等），与 **`factor_layer/factor_engine`** 同源。请在项目根执行前设置：
 
 ```bash
-export PYTHONPATH="/path/to/quantsociety_backend_project/backtest_layer:/path/to/quantsociety_backend_project/factor_layer/factor_engine"
+export PYTHONPATH="/path/to/quantsociety_backend_project:/path/to/quantsociety_backend_project/backtest_layer:/path/to/quantsociety_backend_project/factor_layer/factor_engine"
 ```
 
-这样 `import single_asset_backtest` 与 `import runtime` 均可解析。
+这样 `import strategy_layer.data`、`import single_asset_backtest` 与 `import runtime` 均可解析。
 
 ### 新人 5 分钟上手（从哪读、跑什么）
 
@@ -32,10 +32,58 @@ export PYTHONPATH="/path/to/quantsociety_backend_project/backtest_layer:/path/to
 
 ### 给协作者：近期实现要点（扫一眼能懂「做了什么」）
 
-- **单资产**：`run_single_asset_backtest` → Backtrader `target_position` 策略 → 报告；可选 **`target_lag_bars`**、融券事后近似、**`trade_ledger`**（工业指标用）。
+- **单资产**：`run_single_asset_backtest` → Backtrader `target_position` 策略 → 报告；可选 **`target_lag_bars`**、融券事后近似、**`trade_ledger`**（工业指标用，`metrics_profile="fast"` 会强制关闭）。
+- **单资产批量**：`run_single_asset_backtest_batch(tasks=[...], max_workers=...)`；`max_workers=1` 串行等价，`>1` 走任务级多进程并行，适合参数网格/滚动窗口，不建议用于单次短回测。
 - **多资产**（与早期「仅矩阵 shift × 收益」相比已加强）：先对 **目标权重矩阵** 做 **逐 bar 执行层**（`runner.py` 内 `_apply_multi_asset_execution_and_cost_*`）：最小调仓阈值、可选 **ADV 参与率上限**、**佣金+点差 bps** 与 **线性/平方冲击** 成本；再得到 **`executed_weights`**，再 **`shift(portfolio_weight_lag_bars)`** 与 **`asset_return`** 相乘得到组合收益；权益为 **`(1+net_return).cumprod()`**。
 - **性能**：多资产执行可选 **`python`（pandas 逐 bar）/ `numpy` / `numba` / `auto`**；注意 **`BacktestConfig.portfolio_execution_engine == "python"` 时实际请求会交给环境变量 `FACTOR_BACKTEST_EXECUTION_ENGINE`**（见 `runtime/perf_config.py`），便于在 CI/本机统一切换内核而不改业务 YAML。
 - **审计**：`summary` 含 **时序语义**（`signal_timestamp` 等）、**`execution_effective_lag_bars`**、**`execution_engine_requested`/`resolved`**（仅 multi）、**`data_fingerprint`**；多资产指纹对 **执行后权重** 统计，与真实执行一致。
+
+### 单资产性能优化指南（实践版）
+
+> 目标：在不改变 `returns / metrics / summary` 输出契约与时序语义前提下，优先拿到稳定吞吐收益。
+
+1. **单次迭代优先 `fast` 档**（少算，不改交易逻辑）
+
+```python
+from single_asset_backtest.config import BacktestConfig
+from single_asset_backtest.runner import run_single_asset_backtest
+
+report = run_single_asset_backtest(
+    ohlcv=ohlcv,
+    target_position=target_position,
+    config=BacktestConfig(
+        initial_cash=100_000.0,
+        metrics_profile="fast",  # 与 core 同核心指标键，跳过扩展指标
+        include_trade_ledger=True,  # fast 下会被强制关闭
+    ),
+)
+```
+
+2. **批量任务再开多进程**（参数网格 / 多窗口）
+
+```python
+from single_asset_backtest.config import BacktestConfig
+from single_asset_backtest.runner import run_single_asset_backtest_batch
+
+tasks = [
+    {
+        "ohlcv": ohlcv,
+        "target_position": target_position,
+        "config": BacktestConfig(metrics_profile="fast", initial_cash=100_000.0),
+    },
+    {
+        "ohlcv": ohlcv,
+        "target_position": target_position,
+        "config": BacktestConfig(metrics_profile="core", initial_cash=100_000.0),
+    },
+]
+reports = run_single_asset_backtest_batch(tasks=tasks, max_workers=4)
+```
+
+3. **不要误用并行**
+- 单次短回测通常先用 `max_workers=1`（进程启动与序列化可能抵消收益）。
+- 只有任务数与样本规模足够大时，再放大 `max_workers`。
+- `run_single_asset_backtest_batch` 输出顺序与输入一致，便于参数回填与复现实验表格。
 
 ---
 
@@ -65,6 +113,7 @@ export PYTHONPATH="/path/to/quantsociety_backend_project/backtest_layer:/path/to
 | §13 | 前视边界 |
 | §14 | **已实现功能全量清单**（入口、输出、指标键名，便于自查） |
 | §15–16 | 延伸阅读、测试命令 |
+| §17 | **协作补充**：C 侧衔接、排错、团队日志 |
 
 ---
 
@@ -90,7 +139,7 @@ export PYTHONPATH="/path/to/quantsociety_backend_project/backtest_layer:/path/to
 |------|------|
 | `config.py` | 冻结配置数据类 `BacktestConfig`：资金、成本、数据路径、指标档位、组合参数、滞后 bar 等 |
 | `contracts.py` | **输入契约**：`target_position` / `target_weights` 校验、时间索引、`ffill` 对齐；OHLCV 时间完整性；**冻结** `REQUIRED_*` 键与 `BACKTEST_SCHEMA_VERSION` |
-| `io.py` | 从磁盘读 `target_position`；按 `data_root + symbol + frequency` **自动发现** OHLCV 文件并 `load_ohlcv` |
+| `io.py` | 从磁盘读 `target_position`；行情入口统一委托 **`strategy_layer.data.market_data`**，支持 `source_path`、`data_root` 自动发现与 `aggregate_bars_daily_summary` 标准化/缓存 |
 | `runner.py` | **主流程**（代码量较大）：`run_single_asset_backtest`、`run_multi_asset_backtest`；多资产 **执行+成本** 三层实现（pandas / numpy / numba）；指纹、**时序审计**、**`PerfConfig` 与执行引擎解析**；单资产融券事后修正 |
 | `report.py` | 将权益曲线、持仓、佣金、交易次数等 **组装成协议化 dict**，并调用 `metrics` |
 | `metrics.py` | 按 `metrics_profile` 分层计算夏普、回撤、基准、工业扩展、交易微观等 |
@@ -134,19 +183,27 @@ export PYTHONPATH="/path/to/quantsociety_backend_project/backtest_layer:/path/to
 
 | 字段 | 含义 |
 |------|------|
-| `metrics_profile` | `"core"` / `"standard"` / `"industrial"`：控制 `metrics.py` 计算哪些键（见第 11 节） |
+| `metrics_profile` | `"fast"` / `"core"` / `"standard"` / `"industrial"`：控制 `metrics.py` 计算哪些键（见第 11 节）；其中 `fast` 与 `core` 输出同一必需指标集合，但跳过扩展计算以降低开销 |
 | `risk_free_rate_annual` | **年化**无风险利率，用于夏普、Treynor、Omega 阈值等（单位为与年化收益一致的小数，如 `0.03` 表示 3%） |
 
 ### 4.3 数据加载（`load_ohlcv_from_config`）
 
 | 字段 | 含义 |
 |------|------|
-| `data_root` | 数据根目录（默认示例指向本机 IBKR 树） |
-| `symbol` | 标的代码；与 `io._choose_ohlcv_file` 的目录/文件名匹配有关 |
+| `market_data_mode` | 行情入口模式：`data_root`、`source_path`、`aggregate_bars_daily_summary`；留空时按 `data_root` 兼容旧行为 |
+| `data_root` | `market_data_mode="data_root"` 时的数据根目录；按 `symbol + frequency` 自动发现标准 OHLCV 文件 |
+| `source_path` | `market_data_mode="source_path"` 时直接读取的单文件路径（csv/parquet，需已是标准 OHLCV 列） |
+| `market_data_cache_root` | 可选缓存目录；若配置，会把标准化后的单标的 OHLCV 缓存在 `{cache_root}/{dataset}/freq={freq}/{symbol}.parquet` |
+| `aggregate_bars_root` | `market_data_mode="aggregate_bars_daily_summary"` 时的 aggregate_bars 根目录 |
+| `aggregate_dataset` | aggregate_bars 数据集名，默认 `daily_market_summary` |
+| `symbol` | 标的代码；用于文件自动发现、aggregate_bars 过滤与缓存文件命名 |
 | `frequency` | 逻辑频率标签：`"1min"`…`"1d"`；用于路径与别名（**不是**在引擎内重采样 K 线） |
+| `aggregate_symbol_column` | aggregate_bars 中的代码列名，默认 `ticker` |
+| `aggregate_timestamp_column` | aggregate_bars 中的时间列名，默认 `align_time` |
+| `aggregate_columns` | aggregate_bars OHLCV 映射，默认 `o/h/l/c/v -> open/high/low/close/volume` |
 | `prefer_parquet` | 同目录多文件时优先 parquet 还是 csv |
 | `max_rows` | 仅取 **最后** `max_rows` 行（tail），用于缩短样本 |
-| `strict_real_data` | **True** 时：**禁止** 传入内存中的 inline OHLCV，**必须** 从 `data_root` 加载，避免「假数据混入」 |
+| `strict_real_data` | **True** 时：**禁止** 传入内存中的 inline OHLCV，**必须** 通过配置好的市场数据入口加载，避免「假数据混入」 |
 | `strict_temporal_validation` | 传给 `validate_temporal_integrity`：是否严格检查重复时间戳、`arrival_time < event_time` 等 |
 
 ### 4.4 单资产多空与账本
@@ -156,7 +213,7 @@ export PYTHONPATH="/path/to/quantsociety_backend_project/backtest_layer:/path/to
 | `allow_short` | False 时若目标为负会 **报错** |
 | `borrow_rate_annual` | **年化**融券费率；若 `>0`，在单资产回测 **结束后** 按近似公式扣减权益并摊入 `commission_paid`（见第 12 节） |
 | `short_margin_requirement` | 传给策略：空头目标不会低于 `-1 + short_margin_requirement`（预留保证金语义） |
-| `include_trade_ledger` | True 时收集 **逐笔委托/平仓** 事件列表；**或与** `metrics_profile=="industrial"` 时也会为工业指标开启账本 |
+| `include_trade_ledger` | True 时收集 **逐笔委托/平仓** 事件列表；`metrics_profile=="industrial"` 会自动开启；`metrics_profile=="fast"` 会强制关闭以保证低开销 |
 
 ### 4.5 多资产组合专用
 
@@ -226,20 +283,22 @@ export PYTHONPATH="/path/to/quantsociety_backend_project/backtest_layer:/path/to
 
 ### 6.2 `load_ohlcv(path)`
 
-1. 读表 → `validate_temporal_integrity`。
-2. 必须有列：`timestamp`, `open`, `high`, `low`, `close`。
-3. `timestamp` → 无时区索引，**排序**。
-4. 无 `volume` 则补 **0.0**。
-5. `max_rows`：取 **尾部** 若干行。
-6. 返回列：**`open, high, low, close, volume`**。
+1. 薄封装委托 **`strategy_layer.data.load_standard_ohlcv`**。
+2. 读表 → `validate_temporal_integrity`。
+3. 必须有列：`timestamp`, `open`, `high`, `low`, `close`。
+4. `timestamp` → 无时区索引，**排序**。
+5. 无 `volume` 则补 **0.0**。
+6. `max_rows`：取 **尾部** 若干行。
+7. 返回列：**`open, high, low, close, volume`**。
 
 ### 6.3 `load_ohlcv_from_config(config)`
 
-要求 **`symbol` 与 `frequency` 非空**，调用 **`_choose_ohlcv_file`**：
+要求 **`symbol` 与 `frequency` 非空**，并统一委托 **`strategy_layer.data.load_single_asset_ohlcv`**：
 
-1. 尝试 `data_root/symbol/frequency` 为文件则直接用；为目录则按 `prefer_parquet` 排序取第一个匹配后缀文件。
-2. 否则在 `data_root` 下扁平匹配 `{symbol}_{frequency}*.{ext}`。
-3. 再否则：对 **黄金等别名** 会把 `roots_to_scan` 扩到 `data_root/gold`，并用 **频率别名**（如 `1h` ↔ `1_hour`）与 **文件名前缀**（XAU/XAUUSD/GOLD）做模糊匹配。
+1. `market_data_mode="source_path"`：直接读取 `source_path`，要求文件已经是标准 OHLCV 列。
+2. `market_data_mode="data_root"`（或留空）：沿用旧的目录/文件名自动发现逻辑，包括频率别名与黄金等前缀兼容。
+3. `market_data_mode="aggregate_bars_daily_summary"`：从 `aggregate_bars_root/aggregate_dataset` 的 yearly 多 ticker parquet 中按 `symbol` 过滤，映射列后输出标准 OHLCV。
+4. 若设置 `market_data_cache_root`，标准化结果会按 symbol/frequency 写入共享缓存；下次优先命中缓存，再回源。
 
 ---
 
@@ -263,7 +322,7 @@ export PYTHONPATH="/path/to/quantsociety_backend_project/backtest_layer:/path/to
 12. **`addstrategy`** → **`cerebro.run()`**。
 13. 从 **`strategy.trace`** 取出时间戳、权益、实现仓位、目标仓位、佣金、成交笔数、可选 **trade_ledger**。
 14. **`build_backtest_report(...)`**：  
-    - `trade_ledger`：当 `include_trade_ledger` **或** `metrics_profile=="industrial"` 时传入，否则 **None**。  
+    - `trade_ledger`：`metrics_profile=="fast"` 时强制不传；否则当 `include_trade_ledger` **或** `metrics_profile=="industrial"` 时传入。  
     - **`reproducibility_metadata`**：含 `mode=single`、`run_id`、`data_fingerprint`（见第 8 节）、依赖版本、`git_sha`。
 15. **若 `borrow_rate_annual > 0`**：在报告生成后做 **事后扣减**（见第 12 节），**不**在 Backtrader 内逐日模拟融券。
 
@@ -417,6 +476,7 @@ export PYTHONPATH="/path/to/quantsociety_backend_project/backtest_layer:/path/to
 | 函数 | 说明 |
 |------|------|
 | `run_single_asset_backtest` | 单标的 + Backtrader；参数含 `ohlcv`、`target_position`、`config`、`strategy_name` / `strategy_version` / `strategy_params`、**`benchmark_return`**、**`avg_daily_volume`**（容量估计用） |
+| `run_single_asset_backtest_batch` | 单标的批量入口；输入任务列表，`max_workers=1` 串行，`max_workers>1` 任务级多进程并行；输出顺序与输入一致 |
 | `run_multi_asset_backtest` | 组合向量回测；参数含 `ohlcv_by_symbol` 或 `symbols` + `config`、`target_weights` |
 | `build_backtest_report` | 低层组装报告（一般由 `runner` 调用） |
 | `load_ohlcv` / `load_ohlcv_from_config` | 读行情 |
@@ -437,7 +497,7 @@ export PYTHONPATH="/path/to/quantsociety_backend_project/backtest_layer:/path/to
 | 做空 | **`allow_short`**、**`short_margin_requirement`**（裁剪空头目标） |
 | 目标滞后 | **`target_lag_bars`**（对齐后再 `shift`；参与 **data_fingerprint**） |
 | 严格真数据 | **`strict_real_data`** 禁止 inline OHLCV |
-| 交易账本 | **`include_trade_ledger`** 或 **`metrics_profile=="industrial"`** 时采集；用于工业交易微观指标 |
+| 交易账本 | `include_trade_ledger=True` 可显式开启；`metrics_profile="industrial"` 自动开启；`metrics_profile="fast"` 强制关闭 |
 | 融券近似 | **`borrow_rate_annual > 0`** 时事后扣减（§12） |
 
 ### 14.3 多资产组合
@@ -465,7 +525,7 @@ export PYTHONPATH="/path/to/quantsociety_backend_project/backtest_layer:/path/to
 
 ### 14.5 指标键名按 `metrics_profile`（与 `metrics.py` 一致）
 
-**`core`**：`total_return`、`annual_return`、`volatility`、`sharpe`、`max_drawdown`、`turnover`、`trades`、`commission_paid`。
+**`core` / `fast`**：`total_return`、`annual_return`、`volatility`、`sharpe`、`max_drawdown`、`turnover`、`trades`、`commission_paid`（`fast` 与 `core` 指标键与数值语义一致，差异仅在跳过扩展指标与禁用 ledger 以降低开销）。
 
 **`standard`**：在 core 上增加（含但不限于）  
 `downside_volatility`、`sortino`、`calmar`、`hit_rate_bar`、`alpha`、`beta`、`capacity_estimate`、`turnover_sensitivity`（dict）、**`information_ratio`、`tracking_error`、`treynor`、`up_market_capture`、`down_market_capture`、`r_squared`**（依赖 **`benchmark_return`**；无基准时为 0）。
@@ -504,11 +564,33 @@ export PYTHONPATH="/path/to/quantsociety_backend_project/backtest_layer:/path/to
 
 ## 16. 运行相关测试
 
-回测专项测试位于 **`backtest_layer/tests/`**（`test_backtest_*.py`）；`conftest.py` 会把 **`backtest_layer`** 与 **`factor_layer/factor_engine`** 加入 `sys.path`，一般无需手写 `PYTHONPATH`。在 **仓库根** 执行：
+回测专项测试位于 **`backtest_layer/tests/`**（`test_backtest_*.py`）；`conftest.py` 会把 **仓库根**、**`backtest_layer`** 与 **`factor_layer/factor_engine`** 加入 `sys.path`，一般无需手写 `PYTHONPATH`。在 **仓库根** 执行：
 
 ```bash
 cd /path/to/quantsociety_backend_project
 pytest backtest_layer/tests/test_backtest_*.py -q
 ```
 
-若不用 pytest 而直接跑脚本，仍建议按文首 **`export PYTHONPATH=...backtest_layer:...factor_engine`**。需已安装 **`backtrader`**（`pip install "factor-engine[backtest]"`）。
+若不用 pytest 而直接跑脚本，仍建议按文首 **`export PYTHONPATH=...repo_root:...backtest_layer:...factor_engine`**。需已安装 **`backtrader`**（`pip install "factor-engine[backtest]"`）。
+
+---
+
+## 17. 协作补充（研究员 C、排错、团队日志）
+
+### 17.1 与研究员 C（`single_asset_alpha`）的输入
+
+- **推荐交付**：由 C 的 **`TargetPositionSchema.format_output`** 得到的长表（含 `timestamp`、`symbol`、`target_position`）；D 侧 **`validate_target_position`** 会取 `target_position` 列并对齐到行情索引。  
+- **端到端**：同一根 OHLCV 上先 C 后 D，见 **`strategy_layer/single_asset_alpha/integration/backtest_bridge.py`** 与示例 **`strategy_layer/single_asset_alpha/examples/c_to_d_end_to_end.py`**（C 侧 README 有环境与滞后说明）。  
+- **滞后**：C 的 **`shift_bars`** 与 **`BacktestConfig.target_lag_bars`** 不要重复叠满，见 C 侧 README **「与 D 侧的滞后约定」**。
+- **双 lag 保护**：若你通过 C→D bridge（`run_pipeline_then_single_asset_backtest`）联跑，桥接层会在 **`shift_bars>0` 且 `target_lag_bars>0`** 时直接抛出 `ValueError("Detected double lag ...")`；修复方式是二选一：要么保留 C 侧 shift、把 D 侧 lag 设 0，要么反过来。
+
+### 17.2 常见问题（排错顺序）
+
+1. **`import strategy_layer.data` / `import single_asset_backtest` / `import runtime` 失败**：检查 `PYTHONPATH` 是否同时包含 **仓库根**、**`backtest_layer`** 与 **`factor_layer/factor_engine`**（文首「运行时代码路径」）。  
+2. **单资产回测报错缺 `backtrader`**：`pip install "factor-engine[backtest]"`。  
+3. **`target_position` 与行情对不齐**：确认 **时间索引 / `timestamp` 列**与 OHLCV **频率、日历**一致；契约侧会对齐并 `ffill`，但错频会得到错误经济含义。  
+4. **多资产执行结果与配置不一致**：当 **`portfolio_execution_engine == "python"`** 时，实际内核可能由环境变量 **`FACTOR_BACKTEST_EXECUTION_ENGINE`** 决定（见 **`runtime/perf_config.py`**），`summary` 中会写 **requested / resolved**。
+
+### 17.3 团队进度与变更说明
+
+阶段进展与可复用的 **git commit 说明**可写在仓库根 **`GROUP_DEVELOP_LOG.md`**（约定：**新记录写在文件最上方**）。与本子系统相关的协议仍以 **`docs/adr_backtest_target_position.md`** 与本文为准。

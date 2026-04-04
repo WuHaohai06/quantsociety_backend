@@ -74,6 +74,7 @@ class BaseSignalGenerator(ABC):
                 f"[{self.name}] 行情数据缺少必要列: {missing}. "
                 f"当前列: {list(market_data.columns)}"
             )
+        # 与 factor_data 按索引对齐；若上游是整数索引，须先重采样为交易日 DatetimeIndex
         if not isinstance(market_data.index, pd.DatetimeIndex):
             raise TypeError(
                 f"[{self.name}] 行情数据索引必须为 DatetimeIndex, "

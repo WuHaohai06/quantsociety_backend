@@ -3,7 +3,7 @@
 默认导出单标的入口与契约/策略注册；多标的请 ``from single_asset_backtest.runner import run_multi_asset_backtest``。
 """
 
-from .config import BacktestConfig
+from .config import BacktestConfig  # 单标/多标共用一份快照，写入报告 summary["config"]
 from .contracts import (
     BACKTEST_SCHEMA_VERSION,
     REQUIRED_METRICS_KEYS,
@@ -13,7 +13,7 @@ from .contracts import (
     validate_target_position,
 )
 from .io import load_ohlcv, load_target_position
-from .runner import run_single_asset_backtest
+from .runner import run_single_asset_backtest  # 多标的见同模块 run_multi_asset_backtest（未在包根导出）
 from .strategy_library import build_strategy_registry
 from .strategy_registry import StrategyRegistry, StrategySpec
 

@@ -19,9 +19,9 @@ def _filter_universe(panel: pd.DataFrame, config: CompositeSignalConfig) -> pd.D
     if config.universe.membership_column and config.universe.include_values:
         out = out[out[config.universe.membership_column].isin(config.universe.include_values)].copy()
     if config.universe.min_assets_per_date is not None:
-        counts = out.groupby("datetime")["asset"].nunique()
+        counts = out.groupby("timestamp")["symbol"].nunique()
         valid_dates = counts[counts >= int(config.universe.min_assets_per_date)].index
-        out = out[out["datetime"].isin(valid_dates)].copy()
+        out = out[out["timestamp"].isin(valid_dates)].copy()
     return out.reset_index(drop=True)
 
 

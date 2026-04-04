@@ -40,7 +40,7 @@ class RSISignal(BaseSignalGenerator):
 
         close = market_data["close"]
 
-        # RSI 计算 (Wilder 平滑, 全向量化)
+        # RSI：涨跌用 EWM(alpha=1/period) 近似 Wilder，与常见 TA 库略有数值差但方向一致
         delta = close.diff()
         gain = delta.clip(lower=0.0)
         loss = (-delta).clip(lower=0.0)
@@ -51,12 +51,11 @@ class RSISignal(BaseSignalGenerator):
         rs = avg_gain / avg_loss.clip(lower=1e-10)
         rsi = 100.0 - (100.0 / (1.0 + rs))
 
-        # 转换为对称信号: 将 [0, 100] 映射到 [-1, 1]
+        # 以超买/卖区间中点为「中性」，偏离越大方向越明确；负号使得超卖区为正（偏多）
         midpoint = (overbought + oversold) / 2.0
         half_range = (overbought - oversold) / 2.0
 
-        # 线性映射后 tanh 压缩
-        raw_signal = -(rsi - midpoint) / half_range
+        raw_signal = -(rsi - midpoint) / max(half_range, 1e-6)  # 防 overbought==oversold 除零
         signal_out = np.tanh(raw_signal)
         signal_out.name = self.name
 

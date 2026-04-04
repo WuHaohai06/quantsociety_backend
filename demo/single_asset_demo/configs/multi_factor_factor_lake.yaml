@@ -1,0 +1,69 @@
+meta:
+  strategy_id: demo_single_asset_multi_factor
+  version: v1
+  description: Single-asset demo using factor_engine-generated common technical factors.
+
+instrument:
+  symbol: A
+
+market_data:
+  mode: aggregate_bars_daily_summary
+  aggregate_bars_root: /home/yluel/share/projects/massive_parquet/cleaned_massive_data/aggregate_bars
+  aggregate_dataset: daily_market_summary
+  aggregate_symbol_column: ticker
+  aggregate_timestamp_column: align_time
+  aggregate_columns:
+    open: o
+    high: h
+    low: l
+    close: c
+    volume: v
+  cache_root: ../cache/market_data
+  freq: 1d
+  start_date: 2020-01-01
+  end_date: 2025-12-31
+
+factor_source:
+  mode: factor_lake
+  factor_lake_root: ../factor_lake
+  factor_lake_align_method: outer
+  factor_refs:
+    - factor_id: demo_mom_2_v1
+      alias: mom_2
+    - factor_id: demo_sma_gap_4_v1
+      alias: sma_gap_4
+    - factor_id: demo_rsi_6_v1
+      alias: rsi_6
+    - factor_id: demo_vol_5_v1
+      alias: vol_5
+
+signal:
+  type: factor_threshold
+  name: FactorThreshold
+  params:
+    factor_names: [mom_2, sma_gap_4, rsi_6, vol_5]
+    factor_weights:
+      mom_2: 0.35
+      sma_gap_4: 0.30
+      rsi_6: 0.25
+      vol_5: -0.10
+    normalize: true
+    zscore_window: 30
+
+position_mapper:
+  type: threshold
+  name: ThresholdMapper
+  params:
+    long_entry_threshold: 0.16
+    long_exit_threshold: -0.02
+    short_entry_threshold: -0.16
+    short_exit_threshold: 0.02
+    allow_short: false
+    position_size: 1.0
+    shift_bars: 1
+
+output:
+  output_dir: ../outputs/multi_factor_alpha
+  output_format: parquet
+  save_full_timeseries: true
+  save_debounced: true

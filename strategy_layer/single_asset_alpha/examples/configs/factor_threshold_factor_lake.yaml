@@ -1,0 +1,52 @@
+meta:
+  strategy_id: factor_threshold_factor_lake_demo
+  version: v1
+  description: Factor-lake driven single_asset_alpha example. Replace the lake path with your own.
+
+instrument:
+  symbol: 000001.SZ
+
+market_data:
+  mode: data_root
+  data_root: /path/to/market_data
+  freq: 1d
+
+factor_source:
+  mode: factor_lake
+  factor_lake_root: /path/to/factor_lake
+  factor_lake_align_method: outer
+  factor_refs:
+    - factor_id: my_factor_v1
+      alias: alpha_1
+    - factor_id: my_factor_v2
+      alias: alpha_2
+
+signal:
+  type: factor_threshold
+  name: FactorThreshold
+  params:
+    factor_names: [alpha_1, alpha_2]
+    factor_weights:
+      alpha_1: 0.6
+      alpha_2: 0.4
+    normalize: true
+    zscore_window: 60
+
+position_mapper:
+  type: threshold
+  name: ThresholdMapper
+  params:
+    long_entry_threshold: 0.3
+    long_exit_threshold: -0.1
+    allow_short: false
+    shift_bars: 1
+
+run:
+  start_date: 2023-01-01
+  end_date: 2024-12-31
+
+output:
+  output_dir: ../../../../outputs/single_asset_alpha/factor_threshold_factor_lake_demo
+  output_format: parquet
+  save_full_timeseries: true
+  save_debounced: true

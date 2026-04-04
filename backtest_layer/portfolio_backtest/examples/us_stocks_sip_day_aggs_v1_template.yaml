@@ -1,0 +1,78 @@
+# 面向真实 us_stocks_sip/day_aggs_v1 清洗目录的组合回测模板。
+#
+# 说明：
+# 1. 这个模板已经把 kline 路径直接写成你当前的真实清洗目录。
+# 2. 你只需要把 holdings.path 换成你自己的组合持仓长表。
+# 3. 如果你有可交易约束或基准收益，也可以取消下面对应段落的注释。
+
+meta:
+  strategy_name: us_stocks_sip_day_aggs_v1_strategy
+  run_name: us_stocks_sip_day_aggs_v1_run
+  description: Portfolio backtest template wired to cleaned us_stocks_sip/day_aggs_v1 parquet data.
+
+inputs:
+  holdings:
+    # 替换成你自己的组合持仓长表。
+    # 需要字段: trade_date, symbol, weight
+    path: /path/to/your/portfolio_holdings.csv
+    format: csv
+
+  kline:
+    # 你当前的真实清洗目录：年/月/日 parquet 分层。
+    path: /home/yluel/share/projects/massive_parquet/cleaned_massive_data/us_stocks_sip/day_aggs_v1
+    format: parquet
+    recursive: true
+    glob: "**/*.parquet"
+    rename:
+      align_time: trade_date
+      ticker: symbol
+
+  # 如果你已经有可交易约束长表，可以打开这里。
+  # tradable:
+  #   path: /path/to/your/tradable_flags.parquet
+  #   format: parquet
+  #   rename:
+  #     trade_date: trade_date
+  #     symbol: symbol
+  #     is_tradable: is_tradable
+
+  # 如果你已经有基准收益序列，可以打开这里。
+  # benchmark:
+  #   path: /path/to/your/benchmark_returns.csv
+  #   format: csv
+  #   rename:
+  #     trade_date: trade_date
+  #     benchmark_return: benchmark_return
+
+columns:
+  date_col: trade_date
+  symbol_col: symbol
+  weight_col: weight
+  price_col: close
+  tradable_date_col: trade_date
+  tradable_symbol_col: symbol
+  tradable_flag_col: is_tradable
+  benchmark_date_col: trade_date
+  benchmark_return_col: benchmark_return
+
+backtest:
+  annualization: 252
+  return_window: 1
+  fee_rate: 0.0003
+  slippage_rate: 0.0002
+
+output:
+  output_root: ../results
+
+registry:
+  enabled: false
+  min_trade_days: 120
+  min_annual_return: 0.05
+  min_sharpe: 0.8
+  min_calmar: 0.5
+  max_drawdown_limit: -0.20
+  max_annual_volatility: 0.40
+  min_monthly_win_rate: 0.45
+  max_turnover_mean: 1.0
+  min_effective_data_ratio: 0.95
+  max_top5_day_pnl_contribution: 0.50

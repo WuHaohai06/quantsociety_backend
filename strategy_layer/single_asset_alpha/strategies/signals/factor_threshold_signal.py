@@ -48,9 +48,9 @@ class FactorThresholdSignal(BaseSignalGenerator):
         if not available_factors:
             return pd.Series(0.0, index=market_data.index, name=self.name)
 
+        # 与行情对齐；因子缺某日则 NaN，后续 rolling 会自然跳过或你可先 ffill
         factors = factor_data[available_factors].reindex(market_data.index)
 
-        # Z-score 标准化
         if normalize:
             rolling_mean = factors.rolling(
                 window=zscore_window, min_periods=zscore_window // 2
@@ -60,12 +60,11 @@ class FactorThresholdSignal(BaseSignalGenerator):
             ).std()
             factors = (factors - rolling_mean) / rolling_std.clip(lower=1e-8)
 
-        # 加权合成
         weights = np.array([
             factor_weights.get(f, 1.0 / len(available_factors))
             for f in available_factors
         ])
-        weights = weights / np.sum(np.abs(weights))  # 归一化权重
+        weights = weights / np.sum(np.abs(weights))
 
         composite = factors.values @ weights
 

@@ -37,21 +37,20 @@ class MACDSignal(BaseSignalGenerator):
 
         close = market_data["close"]
 
-        # MACD 计算 (全向量化)
+        # 经典 MACD：快慢 EMA 差为 macd_line，再对 macd_line 做信号线 EMA；柱状图=快线动能相对信号线
         ema_fast = close.ewm(span=fast_period, adjust=False).mean()
         ema_slow = close.ewm(span=slow_period, adjust=False).mean()
         macd_line = ema_fast - ema_slow
         signal_line = macd_line.ewm(span=signal_period, adjust=False).mean()
         histogram = macd_line - signal_line
 
-        # 自适应缩放: 使用 histogram 的 rolling std
+        # 用柱状的局部波动做尺度，避免绝对价位或单边趋势导致 tanh 饱和
         hist_std = histogram.rolling(
             window=slow_period * 2, min_periods=slow_period
         ).std()
         normalized = histogram / hist_std.clip(lower=1e-8)
 
-        # tanh 压缩
-        signal_out = np.tanh(normalized)
+        signal_out = np.tanh(normalized)  # 与双均线等信号一样，输出有界连续值供 C-2 使用
         signal_out.name = self.name
 
         return signal_out

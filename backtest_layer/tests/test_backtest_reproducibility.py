@@ -3,7 +3,28 @@ from __future__ import annotations
 import pandas as pd
 
 from single_asset_backtest.config import BacktestConfig
-from single_asset_backtest.runner import run_multi_asset_backtest
+from single_asset_backtest.runner import run_multi_asset_backtest, run_single_asset_backtest, run_single_asset_backtest_batch
+
+
+def _build_single_inputs():
+    idx = pd.date_range("2026-01-01", periods=6, freq="D")
+    ohlcv = pd.DataFrame(
+        {
+            "open": [10, 10.5, 10.7, 10.8, 11.0, 11.2],
+            "high": [10.6, 10.8, 10.9, 11.1, 11.3, 11.5],
+            "low": [9.9, 10.2, 10.5, 10.6, 10.8, 11.0],
+            "close": [10.4, 10.7, 10.8, 11.0, 11.2, 11.4],
+            "volume": [100, 120, 110, 130, 140, 150],
+        },
+        index=idx,
+    )
+    target = pd.DataFrame(
+        {
+            "timestamp": [idx[0], idx[2], idx[4]],
+            "target_position": [0.0, 0.8, 0.2],
+        }
+    )
+    return ohlcv, target
 
 
 def _build_multi_inputs():
@@ -39,6 +60,27 @@ def _build_multi_inputs():
         }
     )
     return ohlcv_by_symbol, target_weights
+
+
+def test_single_asset_data_fingerprint_is_stable_for_same_input():
+    ohlcv, target = _build_single_inputs()
+    cfg = BacktestConfig(initial_cash=100_000.0, commission=0.001, target_lag_bars=0)
+
+    report1 = run_single_asset_backtest(
+        ohlcv=ohlcv,
+        target_position=target,
+        config=cfg,
+    )
+    report2 = run_single_asset_backtest(
+        ohlcv=ohlcv,
+        target_position=target,
+        config=cfg,
+    )
+
+    assert report1["summary"]["data_fingerprint"] == report2["summary"]["data_fingerprint"]
+    assert report1["summary"]["run_id"] != report2["summary"]["run_id"]
+    assert report1["summary"]["dependency_versions"] == report2["summary"]["dependency_versions"]
+    assert report1["summary"]["git_sha"] == report2["summary"]["git_sha"]
 
 
 def test_multi_asset_report_contains_reproducibility_metadata():
@@ -86,3 +128,29 @@ def test_multi_asset_data_fingerprint_is_stable_for_same_input():
 
     assert report1["summary"]["data_fingerprint"] == report2["summary"]["data_fingerprint"]
     assert report1["summary"]["run_id"] != report2["summary"]["run_id"]
+    assert report1["summary"]["dependency_versions"] == report2["summary"]["dependency_versions"]
+    assert report1["summary"]["git_sha"] == report2["summary"]["git_sha"]
+
+
+def test_single_asset_batch_workers_1_matches_sequential_fingerprints():
+    ohlcv, target = _build_single_inputs()
+
+    task0 = {
+        "ohlcv": ohlcv,
+        "target_position": target,
+        "config": BacktestConfig(initial_cash=100_000.0, commission=0.001, target_lag_bars=0),
+    }
+    task1 = {
+        "ohlcv": ohlcv,
+        "target_position": target,
+        "config": BacktestConfig(initial_cash=100_000.0, commission=0.001, target_lag_bars=1),
+    }
+
+    seq0 = run_single_asset_backtest(**task0)
+    seq1 = run_single_asset_backtest(**task1)
+    batched = run_single_asset_backtest_batch(tasks=[task0, task1], max_workers=1)
+
+    assert batched[0]["summary"]["data_fingerprint"] == seq0["summary"]["data_fingerprint"]
+    assert batched[1]["summary"]["data_fingerprint"] == seq1["summary"]["data_fingerprint"]
+
+

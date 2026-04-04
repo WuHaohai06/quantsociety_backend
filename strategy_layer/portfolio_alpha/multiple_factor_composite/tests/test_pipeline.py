@@ -13,6 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from strategy_layer.portfolio_alpha.multiple_factor_composite.composite_config import OrthogonalizationStepConfig, WeightingConfig
+from strategy_layer.portfolio_alpha.multiple_factor_composite.composite_config import FactorSpec
+from strategy_layer.portfolio_alpha.multiple_factor_composite.factor_reader import FactorLakeReader
 from strategy_layer.portfolio_alpha.multiple_factor_composite.orthogonalization import apply_orthogonalization_steps
 from strategy_layer.portfolio_alpha.multiple_factor_composite.pipeline import run_from_config
 from strategy_layer.portfolio_alpha.multiple_factor_composite.weighting import compute_weight_history
@@ -28,8 +30,8 @@ def _write_factor(lake_root: Path, factor_id: str, rows: list[tuple[str, str, fl
 
 
 def _write_auxiliary(path: Path, rows: list[tuple[str, str, object, float | None]]) -> None:
-    frame = pd.DataFrame(rows, columns=["datetime", "asset", "industry", "fwd_return_5d"])
-    frame["datetime"] = pd.to_datetime(frame["datetime"])
+    frame = pd.DataFrame(rows, columns=["timestamp", "symbol", "industry", "fwd_return_5d"])
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"])
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_parquet(path, index=False)
 
@@ -121,8 +123,8 @@ def test_run_from_config_writes_signal_artifacts(tmp_path: Path):
     signal = result["signal"]
 
     assert not signal.empty
-    assert set(["datetime", "asset", "composite_score", "rank", "selected_flag", "side", "signal_id", "signal_version"]).issubset(signal.columns)
-    assert signal.groupby("datetime")["selected_flag"].sum().eq(1).all()
+    assert set(["timestamp", "symbol", "composite_score", "rank", "selected_flag", "side", "signal_id", "signal_version"]).issubset(signal.columns)
+    assert signal.groupby("timestamp")["selected_flag"].sum().eq(1).all()
     assert (output_root / "signals" / "composite_signal.parquet").exists()
     assert (output_root / "panels" / "raw_factor_panel.parquet").exists()
     assert (output_root / "panels" / "orthogonalized_factor_panel.parquet").exists()
@@ -177,17 +179,55 @@ def test_run_from_config_accepts_unquoted_yaml_dates(tmp_path: Path):
     assert (output_root / "signals" / "composite_signal.parquet").exists()
 
 
+def test_factor_reader_returns_canonical_timestamp_symbol(tmp_path: Path):
+    lake_root = tmp_path / "factor_lake"
+
+    _write_factor(
+        lake_root,
+        "value_factor_v1",
+        [
+            ("2024-01-02", "AAA", 1.0),
+            ("2024-01-02", "BBB", 9.0),
+            ("2024-01-03", "AAA", 1.5),
+        ],
+    )
+    _write_factor(
+        lake_root,
+        "quality_factor_v1",
+        [
+            ("2024-01-02", "AAA", 3.0),
+            ("2024-01-03", "AAA", 4.0),
+        ],
+    )
+
+    reader = FactorLakeReader(lake_root)
+    panel = reader.load_factors(
+        [
+            FactorSpec(factor_id="value_factor_v1", alias="value"),
+            FactorSpec(factor_id="quality_factor_v1", alias="quality"),
+        ],
+        start="2024-01-02",
+        end="2024-01-03",
+        symbols=["AAA"],
+    )
+
+    assert list(panel.columns) == ["timestamp", "symbol", "value", "quality"]
+    assert panel["symbol"].tolist() == ["AAA", "AAA"]
+    assert panel["value"].tolist() == [1.0, 1.5]
+    assert panel["quality"].tolist() == [3.0, 4.0]
+
+
 def test_ic_weighting_uses_target_column():
     panel = pd.DataFrame(
         {
-            "datetime": pd.to_datetime(
+            "timestamp": pd.to_datetime(
                 [
                     "2024-01-01", "2024-01-01", "2024-01-01",
                     "2024-01-02", "2024-01-02", "2024-01-02",
                     "2024-01-03", "2024-01-03", "2024-01-03",
                 ]
             ),
-            "asset": ["A", "B", "C"] * 3,
+            "symbol": ["A", "B", "C"] * 3,
             "value": [1.0, 2.0, 3.0, 1.5, 2.5, 3.5, 1.1, 2.1, 3.1],
             "quality": [3.0, 2.0, 1.0, 3.2, 2.2, 1.2, 3.1, 2.1, 1.1],
             "fwd_return_5d": [0.1, 0.2, 0.3, 0.12, 0.22, 0.32, 0.11, 0.21, 0.31],
@@ -206,7 +246,7 @@ def test_ic_weighting_uses_target_column():
         ),
     )
 
-    latest = weight_history.sort_values("datetime").iloc[-1]
+    latest = weight_history.sort_values("timestamp").iloc[-1]
     assert latest["value"] > 0
     assert latest["quality"] < 0
 
@@ -214,8 +254,8 @@ def test_ic_weighting_uses_target_column():
 def test_symmetric_orthogonalization_reduces_pairwise_correlation():
     panel = pd.DataFrame(
         {
-            "datetime": pd.to_datetime(["2024-01-01"] * 6),
-            "asset": ["A", "B", "C", "D", "E", "F"],
+            "timestamp": pd.to_datetime(["2024-01-01"] * 6),
+            "symbol": ["A", "B", "C", "D", "E", "F"],
             "f1": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
             "f2": [1.1, 2.1, 3.1, 4.2, 5.1, 6.2],
         }

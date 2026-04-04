@@ -1,0 +1,25 @@
+meta:
+  signal_id: demo_portfolio_multi_factor
+  version: v1
+  description: Self-contained portfolio demo signal from synthetic factor lake.
+
+source:
+  factor_lake_root: ../factor_lake
+  start: 2024-01-02
+  end: 2024-01-11
+  align_method: outer
+
+factors:
+  - factor_id: demo_value_factor_v1
+    alias: value
+  - factor_id: demo_quality_factor_v1
+    alias: quality
+
+composition:
+  weighting:
+    method: equal
+  final_transform: rank
+  long_top_k: 2
+
+output:
+  root: ../outputs/composite_signal_run

@@ -34,12 +34,12 @@ class FactorEngine:
     """因子引擎：注入后端与数据源，对 :class:`api.factor.Factor` 做编译与执行。"""
 
     def __init__(self, backend, data_source, cache=None) -> None:
-        self.backend = backend
-        self.data_source = data_source
-        self.cache = cache
-        self.analyzer = Analyzer()
-        self.lowerer = Lowerer()
-        self.optimizer = Optimizer()
+        self.backend = backend  # PandasBackend / PolarsBackend / …，由 build_backend 构造
+        self.data_source = data_source  # 从 parquet 等拉 MultiIndex 面板的统一入口
+        self.cache = cache  # 列级缓存；无则每次 execute 全量算
+        self.analyzer = Analyzer()  # Expr → IR + 依赖列分析
+        self.lowerer = Lowerer()  # IR → 逻辑计划树
+        self.optimizer = Optimizer()  # 计划级优化（常折叠等）
 
     def compile(self, factor: Factor):
         """Expr → Analyzer → Lowerer → Optimizer，返回 (plan, analysis)。"""
@@ -76,7 +76,7 @@ class FactorEngine:
             names.append(factor.name)
             analyses[factor.name] = analysis
         if enable_cse and len(plans) > 0:
-            new_plans, shared = apply_cse(plans)
+            new_plans, shared = apply_cse(plans)  # shared：子树 ID → 可复用 PlanNode
         else:
             new_plans, shared = plans, {}
         roots = [
@@ -185,9 +185,9 @@ class FactorEngine:
         )
         return {
             "factor": factor,
-            "analysis": analysis,
-            "plan": plan,
-            "result": result,
+            "analysis": analysis,  # 含 IR、lookback、依赖列，供物化与调试
+            "plan": plan,  # 优化后的 PlanNode，可给可视化或单测断言结构
+            "result": result,  # 通常为 Series（MultiIndex: time × instrument）
         }
 
     def materialize(
@@ -244,6 +244,7 @@ class FactorEngine:
             shared_result_cache={},
             perf=perf,
         )
+        # 先算共享子式，再算各因子根，避免重复执行相同子树
         if ctx.shared_result_cache is not None:
             for sid, sub in dag.shared_nodes.items():
                 ctx.shared_result_cache[sid] = self.backend.execute(sub, ctx)
@@ -291,7 +292,7 @@ class FactorEngine:
             res = self.backend.execute(fp.root, ctx)
             return fp.factor_name, res
 
-        # 默认 threading：共享 ``ExecutionContext`` / 数据源，避免 loky 进程间 pickle 大对象失败
+        # 默认 threading：与 DataFrame 共享内存，避免多进程序列化大面板；CPU 极重时仍可改策略
         raw = Parallel(n_jobs=workers, backend="threading")(
             delayed(_one)(fp) for fp in dag.roots
         )

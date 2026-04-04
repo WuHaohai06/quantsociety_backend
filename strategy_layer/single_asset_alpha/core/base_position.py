@@ -107,7 +107,8 @@ class BasePositionMapper(ABC):
         注意：这是可选操作，完整时间序列版本也可直接交付。
         """
         mask = df["target_position"].diff().abs() > 1e-9
-        mask.iloc[0] = True  # 保留第一行
+        # 首行 diff 为 NaN，若不强制 True 会丢掉初始状态
+        mask.iloc[0] = True
         return df.loc[mask].copy()
 
     def __repr__(self) -> str:

@@ -11,6 +11,6 @@ class Factor:
 
     name: str
     expr: Expr
-    freq: str = "1d"
-    universe: str | None = None
+    freq: str = "1d"  # 业务语义频率，写入 YAML/物化元数据，不参与 IR 类型推导
+    universe: str | None = None  # 股票池/标签，供配置与文档；执行时以数据源为准
     description: str | None = None

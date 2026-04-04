@@ -43,20 +43,19 @@ class DualMASignal(BaseSignalGenerator):
             fast_ma = close.ewm(span=fast_window, adjust=False).mean()
             slow_ma = close.ewm(span=slow_window, adjust=False).mean()
         else:
+            # min_periods=窗口长度：预热期输出 NaN，与「不足窗口不算信号」一致
             fast_ma = close.rolling(window=fast_window, min_periods=fast_window).mean()
             slow_ma = close.rolling(window=slow_window, min_periods=slow_window).mean()
 
-        # 连续信号: 归一化的快慢线差
+        # 连续信号：相对强弱，非简单 ±1
         diff = fast_ma - slow_ma
-        # 用慢线做归一化基准，避免价格量级影响
-        signal = diff / slow_ma
+        signal = diff / slow_ma  # 按价格尺度归一，方便跨标的比较量级
 
-        # 缩放到合理范围（用历史 rolling std 自适应）
+        # 再用波动率归一，避免单边趋势导致长期饱和
         rolling_std = signal.rolling(window=slow_window * 2, min_periods=slow_window).std()
         signal_normalized = signal / rolling_std.clip(lower=1e-8)
 
-        # tanh 压缩到 (-1, 1)
-        signal_out = np.tanh(signal_normalized)
+        signal_out = np.tanh(signal_normalized)  # 有界，便于下游阈值状态机
         signal_out.name = self.name
 
         return signal_out

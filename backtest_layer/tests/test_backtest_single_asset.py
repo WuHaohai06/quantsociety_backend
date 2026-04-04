@@ -8,7 +8,7 @@ import pytest
 
 from single_asset_backtest.config import BacktestConfig
 from single_asset_backtest.io import load_ohlcv_from_config
-from single_asset_backtest.runner import run_single_asset_backtest
+from single_asset_backtest.runner import run_single_asset_backtest, run_single_asset_backtest_batch
 
 
 def _build_inputs():
@@ -59,6 +59,10 @@ def test_run_single_asset_backtest_output_shape():
     assert len(report["summary"]["data_fingerprint"]) == 64
     assert isinstance(report["summary"]["dependency_versions"], dict)
     assert "python" in report["summary"]["dependency_versions"]
+    assert "pandas" in report["summary"]["dependency_versions"]
+    assert "numpy" in report["summary"]["dependency_versions"]
+    assert "backtrader" in report["summary"]["dependency_versions"]
+    assert "git_sha" in report["summary"]
     assert report["summary"]["signal_timestamp"] == "bar_close_t"
     assert report["summary"]["decision_timestamp"] == "bar_close_t"
     assert report["summary"]["execution_effective_lag_bars"] == 0
@@ -169,6 +173,48 @@ def test_strict_real_data_loads_from_gold_data_root(tmp_path):
     assert report["summary"]["bars"] == 6
 
 
+def test_run_single_asset_backtest_can_load_aggregate_bars_from_config(tmp_path):
+    bt = pytest.importorskip("backtrader")
+    assert bt is not None
+
+    aggregate_root = tmp_path / "aggregate_bars"
+    dataset_dir = aggregate_root / "daily_market_summary"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    dates = pd.bdate_range("2024-01-01", periods=6, freq="B", tz="UTC")
+    frame = pd.DataFrame(
+        {
+            "ticker": ["AAA"] * len(dates),
+            "align_time": dates,
+            "o": [10.0, 10.2, 10.3, 10.5, 10.6, 10.8],
+            "h": [10.4, 10.5, 10.7, 10.8, 10.9, 11.1],
+            "l": [9.8, 10.0, 10.1, 10.2, 10.4, 10.5],
+            "c": [10.2, 10.3, 10.6, 10.7, 10.8, 11.0],
+            "v": [1000, 1100, 1200, 1300, 1250, 1400],
+        }
+    )
+    frame.to_parquet(dataset_dir / "daily_market_summary_2024.parquet", index=False)
+
+    target = pd.DataFrame(
+        {
+            "timestamp": [dates[0].tz_convert(None), dates[2].tz_convert(None), dates[4].tz_convert(None)],
+            "target_position": [0.0, 0.8, 0.2],
+        }
+    )
+    cfg = BacktestConfig(
+        market_data_mode="aggregate_bars_daily_summary",
+        aggregate_bars_root=str(aggregate_root),
+        symbol="AAA",
+        frequency="1d",
+        initial_cash=100_000.0,
+        commission=0.001,
+    )
+
+    report = run_single_asset_backtest(target_position=target, config=cfg)
+
+    assert report["summary"]["bars"] == 6
+    assert report["summary"]["strategy_name"] == "target_position"
+
+
 def test_target_lag_bars_changes_fingerprint_and_is_recorded():
     bt = pytest.importorskip("backtrader")
     assert bt is not None
@@ -186,6 +232,8 @@ def test_target_lag_bars_changes_fingerprint_and_is_recorded():
     )
     assert r0["summary"]["data_fingerprint"] != r1["summary"]["data_fingerprint"]
     assert r1["summary"]["strategy_params"]["target_lag_bars"] == 1
+    assert r1["summary"]["execution_effective_lag_bars"] == 1
+    assert r1["summary"]["return_attribution"] == "weights(t-1) * returns(t)"
 
 
 def test_borrow_rate_reduces_equity_and_increases_commission_paid():
@@ -242,6 +290,24 @@ def test_single_asset_strategy_params_include_trade_ledger_flag():
 
     assert report["summary"]["strategy_params"]["include_trade_ledger"] is False
 
+def test_fast_profile_forces_trade_ledger_off_even_when_config_enabled():
+    bt = pytest.importorskip("backtrader")
+    assert bt is not None
+
+    ohlcv, target = _build_inputs()
+    report = run_single_asset_backtest(
+        ohlcv=ohlcv,
+        target_position=target,
+        config=BacktestConfig(
+            initial_cash=100_000.0,
+            include_trade_ledger=True,
+            metrics_profile="fast",
+        ),
+    )
+
+    # fast profile 只保留核心指标计算，不应携带 trade ledger 工件。
+    assert report["summary"]["strategy_params"]["include_trade_ledger"] is False
+    assert "artifacts" not in report
 
 
 
@@ -350,20 +416,33 @@ def test_single_asset_runtime_guard_python_not_extremely_slow():
         }
     )
 
-    cfg = BacktestConfig(
+    core_cfg = BacktestConfig(
         initial_cash=100_000.0,
         commission=0.0,
         include_trade_ledger=False,
         metrics_profile="core",
     )
+    fast_cfg = BacktestConfig(
+        initial_cash=100_000.0,
+        commission=0.0,
+        include_trade_ledger=False,
+        metrics_profile="fast",
+    )
 
-    run_single_asset_backtest(ohlcv=ohlcv, target_position=target, config=cfg)
+    run_single_asset_backtest(ohlcv=ohlcv, target_position=target, config=core_cfg)
+    run_single_asset_backtest(ohlcv=ohlcv, target_position=target, config=fast_cfg)
 
     t0 = time.perf_counter()
-    run_single_asset_backtest(ohlcv=ohlcv, target_position=target, config=cfg)
-    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+    run_single_asset_backtest(ohlcv=ohlcv, target_position=target, config=core_cfg)
+    core_elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
-    assert elapsed_ms <= 1200.0
+    t1 = time.perf_counter()
+    run_single_asset_backtest(ohlcv=ohlcv, target_position=target, config=fast_cfg)
+    fast_elapsed_ms = (time.perf_counter() - t1) * 1000.0
+
+    assert core_elapsed_ms <= 1200.0
+    # 机器噪声下用宽松相对断言：fast 至少不应显著慢于 core。
+    assert fast_elapsed_ms <= core_elapsed_ms * 1.10
 
 
 def test_target_lag_bars_negative_raises():
@@ -376,4 +455,53 @@ def test_target_lag_bars_negative_raises():
             ohlcv=ohlcv,
             target_position=target,
             config=BacktestConfig(target_lag_bars=-1),
+        )
+
+
+def test_run_single_asset_backtest_batch_workers_1_keeps_order_and_matches_single():
+    bt = pytest.importorskip("backtrader")
+    assert bt is not None
+
+    base_ohlcv, base_target = _build_inputs()
+    task0 = {
+        "ohlcv": base_ohlcv,
+        "target_position": base_target,
+        "config": BacktestConfig(initial_cash=100_000.0, commission=0.0, metrics_profile="core"),
+    }
+
+    ohlcv2 = base_ohlcv.copy()
+    ohlcv2["close"] = ohlcv2["close"] * 1.01
+    target2 = base_target.copy()
+    target2["target_position"] = [0.0, 0.5, 0.1]
+    task1 = {
+        "ohlcv": ohlcv2,
+        "target_position": target2,
+        "config": BacktestConfig(initial_cash=120_000.0, commission=0.0, metrics_profile="fast"),
+    }
+
+    single0 = run_single_asset_backtest(**task0)
+    single1 = run_single_asset_backtest(**task1)
+    batch_reports = run_single_asset_backtest_batch(tasks=[task0, task1], max_workers=1)
+
+    assert len(batch_reports) == 2
+    assert batch_reports[0]["summary"]["final_equity"] == pytest.approx(single0["summary"]["final_equity"])
+    assert batch_reports[1]["summary"]["final_equity"] == pytest.approx(single1["summary"]["final_equity"])
+
+
+
+def test_run_single_asset_backtest_batch_invalid_workers_and_unknown_keys_rejected():
+    bt = pytest.importorskip("backtrader")
+    assert bt is not None
+
+    ohlcv, target = _build_inputs()
+    with pytest.raises(ValueError, match="max_workers"):
+        run_single_asset_backtest_batch(
+            tasks=[{"ohlcv": ohlcv, "target_position": target}],
+            max_workers=0,
+        )
+
+    with pytest.raises(ValueError, match="unknown keys"):
+        run_single_asset_backtest_batch(
+            tasks=[{"ohlcv": ohlcv, "target_position": target, "bad_key": 1}],
+            max_workers=1,
         )

@@ -91,7 +91,7 @@ class TargetPositionSchema:
             )
 
         if not pd.api.types.is_float_dtype(df["target_position"]):
-            # 尝试转换
+            # 此处仅探测能否转 float，不原地改传入的 df（调用方若需清洗应自行 astype）
             try:
                 df["target_position"].astype(float)
             except (ValueError, TypeError):
@@ -112,7 +112,7 @@ class TargetPositionSchema:
                     f"target_position 存在高于 {TargetPositionSchema.POSITION_MAX} 的值"
                 )
 
-        # 4. NaN 检查
+        # 4. NaN：交付给 D 前应在 C 侧 ffill/填 0；此处报错便于早发现脏数据
         nan_count = df["target_position"].isna().sum()
         if nan_count > 0:
             errors.append(f"target_position 包含 {nan_count} 个 NaN 值")
@@ -143,7 +143,7 @@ class TargetPositionSchema:
             符合 Schema 的标准输出。
         """
         output = pd.DataFrame()
-        output["timestamp"] = df.index
+        output["timestamp"] = df.index  # 由「索引=bar 时间」展开成长表，便于落盘与跨系统对齐
         output["symbol"] = symbol
 
         output["target_position"] = df["target_position"].values
@@ -152,6 +152,7 @@ class TargetPositionSchema:
             if "signal_value" in df.columns:
                 output["signal_value"] = df["signal_value"].values
             else:
+                # 无原始信号时填 0，避免下游读 parquet 缺列
                 output["signal_value"] = 0.0
 
             if "action_name" in df.columns:

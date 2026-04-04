@@ -141,7 +141,7 @@ class StrategyPipeline:
             f"时间范围: [{market_data.index[0]} ~ {market_data.index[-1]}]"
         )
 
-        if factor_data is None and self.data_fetcher.factor_root:
+        if factor_data is None and self.data_fetcher.has_factor_source:
             logger.info("Step 1b: 尝试加载因子数据...")
             factor_data = self.data_fetcher.load_factor_data(
                 symbol=self.symbol,
@@ -174,13 +174,13 @@ class StrategyPipeline:
 
         # ── Step 4: 格式化输出 ──
         logger.info("Step 4/5: 格式化为标准 target_position Schema...")
+        # internal_df 索引为时间；此处展开为长表 timestamp 列，供 CSV/Parquet 与 D 侧读入
         output_df = TargetPositionSchema.format_output(
             df=internal_df,
             symbol=self.symbol,
             include_optional=True,
         )
 
-        # 校验
         errors = TargetPositionSchema.validate(output_df, strict=True)
         if errors:
             logger.warning(f"  ⚠️ Schema 校验发现问题:")
@@ -200,6 +200,7 @@ class StrategyPipeline:
             saved_files.append(full_path)
 
         if save_debounced:
+            # 仅保留仓位变化行，减小文件；回测前若用 debounced 文件需确认 D 侧是否先展开成全日序列
             debounced_df = BasePositionMapper.debounce(internal_df)
             debounced_output = TargetPositionSchema.format_output(
                 df=debounced_df,
@@ -222,7 +223,7 @@ class StrategyPipeline:
         for fp in saved_files:
             logger.info(f"  📄 {fp}")
 
-        return output_df
+        return output_df  # 列符合 TargetPositionSchema；可交给研究员 D（single_asset_backtest）或 integration.backtest_bridge
 
     def _save_output(
         self, df: pd.DataFrame, suffix: str, fmt: str

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from single_asset_backtest.config import BacktestConfig
+from single_asset_backtest.contracts import REQUIRED_SUMMARY_KEYS
 from single_asset_backtest.report import build_backtest_report
 
 
@@ -24,7 +25,7 @@ def test_report_schema_keys_are_stable():
     assert set(report.keys()) == {"returns", "metrics", "summary"}
     assert set(report["returns"].keys()) == {"equity_curve", "period_return", "realized_position"}
     assert "total_return" in report["metrics"]
-    assert "schema_version" in report["summary"]
+    assert set(REQUIRED_SUMMARY_KEYS).issubset(set(report["summary"].keys()))
     assert "strategy_name" not in report["summary"]
 
 

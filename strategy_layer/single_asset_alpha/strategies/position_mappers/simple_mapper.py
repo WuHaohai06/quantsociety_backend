@@ -116,7 +116,7 @@ class ThresholdPositionMapper(BasePositionMapper):
             index=signals.index,
         )
 
-        # ★ 防未来函数: shift
+        # 默认 shift_bars=1：T 日收盘可得信号 → T+1 生效；若 D 侧再设 target_lag_bars 易重复滞后
         df = self.apply_shift(df, shift_bars=shift_bars)
 
         return df

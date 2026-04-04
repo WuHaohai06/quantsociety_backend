@@ -18,7 +18,7 @@ from typing import Any
 
 import pandas as pd
 
-from single_asset_backtest.config import BacktestConfig
+from single_asset_backtest.config import BacktestConfig  # 仅配置数据类，不触发 backtrader 导入
 from strategy_layer.single_asset_alpha.pipeline import StrategyPipeline
 
 
@@ -33,8 +33,27 @@ def target_position_dataframe_to_backtest_input(df: pd.DataFrame) -> pd.DataFram
     if missing:
         raise ValueError(f"target_position DataFrame 缺少列: {sorted(missing)}")
     extra = [c for c in ("symbol", "signal_value", "action_name") if c in df.columns]
-    cols = ["timestamp", "target_position", *extra]
+    cols = ["timestamp", "target_position", *extra]  # D 侧 validate 只依赖前两列，其余便于审计/排错
     return df[cols].copy()
+
+
+def _extract_position_mapper_shift_bars(pipeline: StrategyPipeline) -> int:
+    mapper = getattr(pipeline, "position_mapper", None)
+    params = getattr(mapper, "params", None)
+
+    if isinstance(params, dict):
+        raw = params.get("shift_bars", 1)
+    elif params is not None and hasattr(params, "shift_bars"):
+        raw = getattr(params, "shift_bars")
+    else:
+        return 0
+
+    if raw is None:
+        return 1
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 1
 
 
 def run_pipeline_then_single_asset_backtest(
@@ -68,21 +87,37 @@ def run_pipeline_then_single_asset_backtest(
     dict
         与 ``run_single_asset_backtest`` 相同：含 ``returns`` / ``metrics`` / ``summary`` 等。
     """
+    # runner 内会 import backtrader，故放在函数体，避免仅 import 本模块就依赖 bt
     from single_asset_backtest.runner import run_single_asset_backtest
 
     tp_df = pipeline.run(
         market_data=market_data,
-        save_full_timeseries=pipeline_save_outputs,
+        save_full_timeseries=pipeline_save_outputs,  # False 时仍可能写 run_meta.json，见 pipeline 实现
         save_debounced=pipeline_save_outputs,
         **pipeline_run_kwargs,
     )
     tp_df = target_position_dataframe_to_backtest_input(tp_df)
     cfg = backtest_config if backtest_config is not None else BacktestConfig()
-    return run_single_asset_backtest(
-        ohlcv=market_data,
+    c_shift_bars = _extract_position_mapper_shift_bars(pipeline)
+    d_target_lag_bars = int(cfg.target_lag_bars)
+    if c_shift_bars > 0 and d_target_lag_bars > 0:
+        raise ValueError(
+            "Detected double lag: "
+            f"pipeline.position_mapper.params.shift_bars={c_shift_bars}, "
+            f"BacktestConfig.target_lag_bars={d_target_lag_bars}. "
+            "Please enable lag on only one side (C mapper shift OR D target_lag_bars)."
+        )
+    report = run_single_asset_backtest(
+        ohlcv=market_data,  # 须与 C 计算信号时用的行情为同一时间轴（索引对齐）
         target_position=tp_df,
         config=cfg,
         strategy_name=strategy_name,
         strategy_version=strategy_version,
         strategy_params=strategy_params,
     )
+    effective_lag_bars = max(0, c_shift_bars) + max(0, d_target_lag_bars)
+    summary = report.get("summary") if isinstance(report, dict) else None
+    if isinstance(summary, dict):
+        summary["execution_effective_lag_bars"] = effective_lag_bars
+        summary["return_attribution"] = f"weights(t-{effective_lag_bars}) * returns(t)"
+    return report

@@ -37,7 +37,28 @@ def test_core_profile_outputs_only_required_metrics():
     }
 
 
-def test_standard_profile_outputs_sortino_and_calmar():
+def test_fast_profile_outputs_only_required_metrics_and_matches_core_values():
+    fast_report = _build_report("fast")
+    core_report = _build_report("core")
+
+    required_keys = {
+        "total_return",
+        "annual_return",
+        "volatility",
+        "sharpe",
+        "max_drawdown",
+        "turnover",
+        "trades",
+        "commission_paid",
+    }
+    assert set(fast_report["metrics"].keys()) == required_keys
+    assert set(core_report["metrics"].keys()) == required_keys
+
+    # fast 与 core 在必需字段上语义一致；fast 仅通过跳过扩展指标来提速。
+    for key in sorted(required_keys):
+        assert fast_report["metrics"][key] == core_report["metrics"][key]
+
+
     report = _build_report("standard")
 
     assert "sortino" in report["metrics"]

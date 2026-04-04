@@ -5,6 +5,7 @@ from typing import Iterable
 
 import pandas as pd
 
+from strategy_layer.data import FactorRef, build_factor_panel, load_factor_long
 from strategy_layer.portfolio_alpha.multiple_factor_composite.composite_config import AuxiliarySourceConfig, FactorSpec
 
 
@@ -60,7 +61,7 @@ def _collect_parquet_paths(
     return sorted(paths)
 
 
-def _merge_asof_by_asset(base: pd.DataFrame, other: pd.DataFrame, value_columns: list[str]) -> pd.DataFrame:
+def _merge_asof_by_symbol(base: pd.DataFrame, other: pd.DataFrame, value_columns: list[str]) -> pd.DataFrame:
     if base.empty:
         return base.copy()
     if other.empty:
@@ -70,44 +71,29 @@ def _merge_asof_by_asset(base: pd.DataFrame, other: pd.DataFrame, value_columns:
         return out
 
     pieces: list[pd.DataFrame] = []
-    for asset, base_group in base.groupby("asset", sort=False):
-        base_group = base_group.sort_values("datetime")
-        other_group = other.loc[other["asset"] == asset].sort_values("datetime")
+    for symbol, base_group in base.groupby("symbol", sort=False):
+        base_group = base_group.sort_values("timestamp")
+        other_group = other.loc[other["symbol"] == symbol].sort_values("timestamp")
         merged = pd.merge_asof(
             base_group,
-            other_group[["datetime", *value_columns]],
-            on="datetime",
+            other_group[["timestamp", *value_columns]],
+            on="timestamp",
             direction="backward",
             allow_exact_matches=True,
         )
-        merged["asset"] = asset
+        merged["symbol"] = symbol
         pieces.append(merged)
     return pd.concat(pieces, ignore_index=True)
 
 
 class FactorLakeReader:
-    """独立于 factor_engine 的 factor lake 读取器。"""
+    """portfolio_alpha factor lake 读取器。
+
+    内外统一使用 strategy_layer.data 的 canonical `timestamp/symbol` 命名。
+    """
 
     def __init__(self, lake_root: str | Path) -> None:
         self.lake_root = Path(lake_root)
-
-    def _factor_paths(self, factor_id: str, start: str | None, end: str | None) -> list[Path]:
-        factor_dir = self.lake_root / "factors" / factor_id
-        if not factor_dir.exists():
-            return []
-        paths = []
-        for child in sorted(factor_dir.iterdir()):
-            if child.is_dir() and child.name.startswith("year="):
-                year = _extract_partition_year(child)
-                start_year = _boundary_year(start, 0)
-                end_year = _boundary_year(end, 9999)
-                if year is not None and start_year <= year <= end_year:
-                    parquet_path = child / "data.parquet"
-                    if parquet_path.exists():
-                        paths.append(parquet_path)
-            elif child.is_file() and child.name == "data.parquet":
-                paths.append(child)
-        return sorted(paths)
 
     def load_factor(
         self,
@@ -115,21 +101,17 @@ class FactorLakeReader:
         *,
         start: str | None = None,
         end: str | None = None,
+        symbols: Iterable[str] | None = None,
     ) -> pd.DataFrame:
-        paths = self._factor_paths(factor_id, start, end)
-        if not paths:
-            raise FileNotFoundError(f"No factor parquet found for {factor_id}")
-
-        frame = pd.concat([pd.read_parquet(path) for path in paths], ignore_index=True)
-        frame["datetime"] = pd.to_datetime(frame["datetime"], errors="coerce")
-        frame["asset"] = frame["asset"].astype("string").str.strip()
-        frame = frame[frame["datetime"].notna() & frame["asset"].notna()].copy()
-        if start:
-            frame = frame[frame["datetime"] >= pd.Timestamp(start)]
-        if end:
-            frame = frame[frame["datetime"] <= pd.Timestamp(end)]
-        return frame[["datetime", "asset", "value"]].sort_values(
-            ["asset", "datetime"]
+        frame = load_factor_long(
+            self.lake_root,
+            factor_id,
+            start=start,
+            end=end,
+            symbols=symbols,
+        )
+        return frame[["timestamp", "symbol", "value"]].sort_values(
+            ["symbol", "timestamp"]
         ).reset_index(drop=True)
 
     def load_factors(
@@ -140,47 +122,22 @@ class FactorLakeReader:
         end: str | None = None,
         align_method: str = "outer",
         anchor_factor: str | None = None,
+        symbols: Iterable[str] | None = None,
     ) -> pd.DataFrame:
         if not factors:
             raise ValueError("factors 不能为空")
 
-        factor_by_name = {factor.name: factor for factor in factors}
-        anchor_name = anchor_factor or factors[0].name
-        if anchor_name not in factor_by_name:
-            raise ValueError(f"anchor_factor '{anchor_name}' 不在 factors 中")
-
-        anchor_spec = factor_by_name[anchor_name]
-        base = self.load_factor(anchor_spec.factor_id, start=start, end=end).rename(
-            columns={"value": anchor_spec.name}
+        refs = [FactorRef(factor_id=factor.factor_id, column_name=factor.name) for factor in factors]
+        panel = build_factor_panel(
+            self.lake_root,
+            refs,
+            start=start,
+            end=end,
+            symbols=symbols,
+            align_method=align_method,
+            anchor_factor=anchor_factor,
         )
-
-        if align_method == "asof_backward":
-            for factor in factors:
-                if factor.name == anchor_spec.name:
-                    continue
-                other = self.load_factor(factor.factor_id, start=start, end=end).rename(
-                    columns={"value": factor.name}
-                )
-                aligned = _merge_asof_by_asset(base[["datetime", "asset"]], other, [factor.name])
-                base = base.merge(aligned, on=["datetime", "asset"], how="left")
-            return base.sort_values(["asset", "datetime"]).reset_index(drop=True)
-
-        merged = base
-        for factor in factors:
-            if factor.name == anchor_spec.name:
-                continue
-            other = self.load_factor(factor.factor_id, start=start, end=end).rename(
-                columns={"value": factor.name}
-            )
-            merged = merged.merge(other, on=["datetime", "asset"], how="outer")
-
-        merged = merged.sort_values(["asset", "datetime"]).reset_index(drop=True)
-        if align_method == "forward_fill":
-            factor_columns = [factor.name for factor in factors]
-            for column in factor_columns:
-                if column in merged.columns:
-                    merged[column] = merged.groupby("asset")[column].ffill()
-        return merged
+        return panel.sort_values(["symbol", "timestamp"]).reset_index(drop=True)
 
 
 class AuxiliaryParquetLoader:
@@ -193,25 +150,25 @@ class AuxiliaryParquetLoader:
             raise FileNotFoundError(f"No parquet files found for auxiliary source '{spec.name}'")
 
         frame = pd.concat([pd.read_parquet(path) for path in paths], ignore_index=True)
-        frame["datetime"] = pd.to_datetime(frame[spec.timestamp_col], errors="coerce")
-        frame["asset"] = frame[spec.asset_col].astype("string").str.strip()
+        frame["timestamp"] = pd.to_datetime(frame[spec.timestamp_col], errors="coerce")
+        frame["symbol"] = frame[spec.symbol_col].astype("string").str.strip()
         selected_columns = {alias: source for alias, source in spec.columns.items()}
         normalized = pd.DataFrame(
             {
-                "datetime": frame["datetime"],
-                "asset": frame["asset"],
+                "timestamp": frame["timestamp"],
+                "symbol": frame["symbol"],
             }
         )
         for alias, source in selected_columns.items():
             normalized[alias] = frame[source]
         normalized = normalized[
-            normalized["datetime"].notna() & normalized["asset"].notna()
+            normalized["timestamp"].notna() & normalized["symbol"].notna()
         ].copy()
         if start:
-            normalized = normalized[normalized["datetime"] >= pd.Timestamp(start)]
+            normalized = normalized[normalized["timestamp"] >= pd.Timestamp(start)]
         if end:
-            normalized = normalized[normalized["datetime"] <= pd.Timestamp(end)]
-        normalized = normalized.sort_values(["asset", "datetime"]).reset_index(drop=True)
+            normalized = normalized[normalized["timestamp"] <= pd.Timestamp(end)]
+        normalized = normalized.sort_values(["symbol", "timestamp"]).reset_index(drop=True)
         return normalized
 
 
@@ -221,19 +178,19 @@ def align_auxiliary_to_panel(
     *,
     method: str,
 ) -> pd.DataFrame:
-    panel_keys = panel[["datetime", "asset"]].drop_duplicates().sort_values(
-        ["asset", "datetime"]
+    panel_keys = panel[["timestamp", "symbol"]].drop_duplicates().sort_values(
+        ["symbol", "timestamp"]
     )
-    value_columns = [column for column in auxiliary.columns if column not in {"datetime", "asset"}]
+    value_columns = [column for column in auxiliary.columns if column not in {"timestamp", "symbol"}]
     if method == "exact":
-        aligned = panel_keys.merge(auxiliary, on=["datetime", "asset"], how="left")
+        aligned = panel_keys.merge(auxiliary, on=["timestamp", "symbol"], how="left")
     elif method == "forward_fill":
-        aligned = panel_keys.merge(auxiliary, on=["datetime", "asset"], how="left")
-        aligned = aligned.sort_values(["asset", "datetime"]).reset_index(drop=True)
+        aligned = panel_keys.merge(auxiliary, on=["timestamp", "symbol"], how="left")
+        aligned = aligned.sort_values(["symbol", "timestamp"]).reset_index(drop=True)
         for column in value_columns:
-            aligned[column] = aligned.groupby("asset")[column].ffill()
+            aligned[column] = aligned.groupby("symbol")[column].ffill()
     elif method == "asof_backward":
-        aligned = _merge_asof_by_asset(panel_keys, auxiliary, value_columns)
+        aligned = _merge_asof_by_symbol(panel_keys, auxiliary, value_columns)
     else:
         raise ValueError(f"Unsupported auxiliary align method: {method}")
-    return panel.merge(aligned, on=["datetime", "asset"], how="left")
+    return panel.merge(aligned, on=["timestamp", "symbol"], how="left")

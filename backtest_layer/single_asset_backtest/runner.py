@@ -34,8 +34,11 @@ from single_asset_backtest.strategy_library import build_strategy_registry
 # ---------------------------------------------------------------------------
 # 可复现指纹：对 OHLCV/权重做统计摘要后哈希，非文件字节级 hash
 # ---------------------------------------------------------------------------
-_NUMBA_AVAILABLE: bool | None = None
+_NUMBA_AVAILABLE: bool | None = None  # 多资产 numba 路径懒探测，避免无 numba 时 import 失败
 _MULTI_ASSET_NUMBA_KERNEL = None
+_DEPENDENCY_VERSIONS_CACHE: dict[str, str | None] | None = None
+_GIT_SHA_UNSET = object()
+_GIT_SHA_CACHE: str | None | object = _GIT_SHA_UNSET
 
 
 def _safe_series_stats(series: pd.Series) -> dict:
@@ -90,6 +93,10 @@ def _multi_asset_fingerprint(feeds: dict[str, pd.DataFrame], weight_matrix: pd.D
 
 
 def _dependency_versions() -> dict[str, str | None]:
+    global _DEPENDENCY_VERSIONS_CACHE
+    if _DEPENDENCY_VERSIONS_CACHE is not None:
+        return dict(_DEPENDENCY_VERSIONS_CACHE)
+
     versions: dict[str, str | None] = {
         "python": platform.python_version(),
         "pandas": None,
@@ -101,26 +108,37 @@ def _dependency_versions() -> dict[str, str | None]:
             versions[pkg] = importlib.metadata.version(pkg)
         except importlib.metadata.PackageNotFoundError:
             versions[pkg] = None
+
+    _DEPENDENCY_VERSIONS_CACHE = dict(versions)
     return versions
 
 
 def _git_sha() -> str | None:
     """向上查找含 ``.git`` 的目录作为仓库根（适配 monorepo 与本包嵌套路径）。"""
+    global _GIT_SHA_CACHE
+    if _GIT_SHA_CACHE is not _GIT_SHA_UNSET:
+        return _GIT_SHA_CACHE
+
     here = Path(__file__).resolve().parent
     repo_root = None
     for p in [here, *here.parents]:
-        if (p / ".git").is_dir():
+        git_marker = p / ".git"
+        if git_marker.is_dir() or git_marker.is_file():
             repo_root = p
             break
     if repo_root is None:
+        _GIT_SHA_CACHE = None
         return None
+
     cmd = ["git", "-C", str(repo_root), "rev-parse", "HEAD"]
     try:
         out = subprocess.run(cmd, check=True, capture_output=True, text=True)
         sha = out.stdout.strip()
-        return sha or None
+        _GIT_SHA_CACHE = sha or None
     except Exception:
-        return None
+        _GIT_SHA_CACHE = None
+
+    return _GIT_SHA_CACHE
 
 
 def _build_reproducibility_metadata(*, mode: str, data_fingerprint: str | None) -> dict:
@@ -560,6 +578,7 @@ def run_single_asset_backtest(
 
     可选融券近似：在 ``borrow_rate_annual>0`` 时对权益序列做事后扣减（非逐笔融券仿真）。
     """
+    # ohlcv 与 target_position 为 None 时从 config.data_root 拉取；strict_real_data 禁止 inline ohlcv
     try:
         import backtrader as bt
     except ImportError as exc:  # pragma: no cover
@@ -598,7 +617,12 @@ def run_single_asset_backtest(
     else:
         aligned_target = pd.Series(0.0, index=feed_frame.index, name="target_position", dtype=float)
 
-    include_trade_ledger = bool(config.include_trade_ledger or config.metrics_profile == "industrial")
+    if config.metrics_profile == "fast":
+        # fast 档位用于高频研究迭代：即便用户显式请求也不采集 ledger，
+        # 以确保该 profile 只做「少算」且具备稳定的低开销特性。
+        include_trade_ledger = False
+    else:
+        include_trade_ledger = bool(config.include_trade_ledger or config.metrics_profile == "industrial")
 
     runtime_params = dict(spec.default_params)
     runtime_params.update(strategy_params or {})
@@ -633,16 +657,18 @@ def run_single_asset_backtest(
 
     strategies = cerebro.run()
     strategy = strategies[0]
+    trace = strategy.trace
+    trace_index = pd.DatetimeIndex(trace.timestamps)
 
-    equity_curve = pd.Series(strategy.trace.equity_curve, index=pd.DatetimeIndex(strategy.trace.timestamps), name="equity")
+    equity_curve = pd.Series(trace.equity_curve, index=trace_index, name="equity")
     realized_position = pd.Series(
-        strategy.trace.realized_position,
-        index=pd.DatetimeIndex(strategy.trace.timestamps),
+        trace.realized_position,
+        index=trace_index,
         name="realized_position",
     )
-    target_used = pd.Series(strategy.trace.target_position, index=pd.DatetimeIndex(strategy.trace.timestamps), name="target_position")
+    target_used = pd.Series(trace.target_position, index=trace_index, name="target_position")
 
-    commission_paid_total = float(strategy.trace.commission_paid)
+    commission_paid_total = float(trace.commission_paid)
     # 融券成本：按空头暴露 × 年化借券率近似摊到每根 bar，并回推权益曲线（研究用）
     if config.borrow_rate_annual > 0 and len(equity_curve):
         ann = max(annualization_factor(equity_curve.index), 1e-12)
@@ -662,7 +688,7 @@ def run_single_asset_backtest(
         realized_position=realized_position,
         target_position=target_used,
         commission_paid=commission_paid_total,
-        trades=int(strategy.trace.trades),
+        trades=int(trace.trades),
         config=config,
         strategy_metadata={
             "strategy_name": spec.name,
@@ -672,7 +698,7 @@ def run_single_asset_backtest(
         },
         benchmark_return=benchmark_return,
         avg_daily_volume=avg_daily_volume,
-        trade_ledger=strategy.trace.trade_ledger if include_trade_ledger else None,
+        trade_ledger=trace.trade_ledger if include_trade_ledger else None,
         reproducibility_metadata={
             **_build_reproducibility_metadata(
                 mode="single",
@@ -685,6 +711,76 @@ def run_single_asset_backtest(
     )
 
     return report
+
+
+def _run_single_asset_backtest_task(index_and_task: tuple[int, dict]) -> tuple[int, dict]:
+    """批量并行 worker：执行单个任务并携带原始索引返回，便于主进程按输入顺序重排。"""
+    task_index, task = index_and_task
+    return task_index, run_single_asset_backtest(**task)
+
+
+def run_single_asset_backtest_batch(
+    *,
+    tasks: list[dict],
+    max_workers: int = 1,
+) -> list[dict]:
+    """批量执行单资产回测任务。
+
+    - ``max_workers<=1``: 串行执行（零并行开销，适合小批量）
+    - ``max_workers>1``: 任务级多进程并行（适合参数网格/滚动窗口）
+
+    注意：该接口只做任务编排，不改变 ``run_single_asset_backtest`` 语义与输出契约。
+    """
+    if max_workers < 1:
+        raise ValueError("max_workers must be >= 1")
+
+    allowed_keys = {
+        "ohlcv",
+        "target_position",
+        "config",
+        "strategy_name",
+        "strategy_version",
+        "strategy_params",
+        "benchmark_return",
+        "avg_daily_volume",
+    }
+
+    indexed_tasks: list[tuple[int, dict]] = []
+    for idx, task in enumerate(tasks):
+        if not isinstance(task, dict):
+            raise TypeError(f"batch task at index {idx} must be a dict")
+        unknown_keys = set(task.keys()) - allowed_keys
+        if unknown_keys:
+            raise ValueError(f"batch task at index {idx} contains unknown keys: {sorted(unknown_keys)}")
+        indexed_tasks.append((idx, task))
+
+    if not indexed_tasks:
+        return []
+
+    if max_workers == 1:
+        ordered_results: list[dict | None] = [None] * len(indexed_tasks)
+        for idx, task in indexed_tasks:
+            ordered_results[idx] = run_single_asset_backtest(**task)
+        return [x for x in ordered_results if x is not None]
+
+    # 多进程只用于 batch 吞吐；单次小任务通常会被进程启动/序列化开销吞没。
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    ordered_results: list[dict | None] = [None] * len(indexed_tasks)
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_run_single_asset_backtest_task, item): item[0]
+            for item in indexed_tasks
+        }
+        for future in as_completed(futures):
+            task_index = futures[future]
+            try:
+                result_index, report = future.result()
+            except Exception as exc:
+                raise RuntimeError(f"run_single_asset_backtest_batch failed at task index {task_index}") from exc
+            ordered_results[result_index] = report
+
+    return [x for x in ordered_results if x is not None]
 
 
 def _normalize_ohlcv_frame(frame: pd.DataFrame, *, max_rows: int | None) -> pd.DataFrame:
@@ -752,6 +848,7 @@ def run_multi_asset_backtest(
     symbols: list[str] | None = None,
 ) -> dict:
     """多标的组合回测：矩阵化目标权重 → 执行与成本 → 滞后权重 × 资产收益 − 成本 → 权益与报告。"""
+    # portfolio_mode 仅元数据；真正分支由本函数入口决定
     config = config or BacktestConfig(portfolio_mode="multi")
 
     feeds = _load_multi_asset_ohlcv(

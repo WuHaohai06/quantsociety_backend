@@ -1,0 +1,56 @@
+meta:
+  strategy_id: combined_mock_demo
+  version: v1
+  description: Combined technical signal example with ATR volatility mapper.
+
+instrument:
+  symbol: DEMO.SZ
+
+market_data:
+  mode: mock
+  mock_periods: 320
+  mock_start_date: 2023-01-01
+  mock_seed: 11
+
+signal:
+  type: combined
+  name: CombinedSignal
+  weights: [0.4, 0.4, 0.2]
+  params:
+    combine_method: weighted_avg
+  signals:
+    - type: dual_ma
+      name: DualMA
+      params:
+        fast_window: 5
+        slow_window: 20
+        ma_type: sma
+    - type: macd
+      name: MACD
+      params:
+        fast_period: 12
+        slow_period: 26
+        signal_period: 9
+    - type: rsi
+      name: RSI
+      params:
+        rsi_period: 14
+        overbought: 70
+        oversold: 30
+
+position_mapper:
+  type: atr_volatility
+  name: ATRVolatilityMapper
+  params:
+    atr_period: 14
+    base_long_threshold: 0.4
+    base_short_threshold: -0.4
+    target_volatility: 0.15
+    allow_short: false
+    shift_bars: 1
+
+output:
+  output_dir: ../../../../outputs/single_asset_alpha/combined_mock_demo
+  output_format: parquet
+  save_full_timeseries: true
+  save_debounced: true

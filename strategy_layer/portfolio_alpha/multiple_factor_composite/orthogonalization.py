@@ -70,7 +70,7 @@ def apply_orthogonalization_steps(
             continue
         factors = list(step.factors) or list(default_factors)
         pieces = []
-        for _, group in out.groupby("datetime", sort=False):
+        for _, group in out.groupby("timestamp", sort=False):
             group = group.copy()
             if step.method == "sequential":
                 updated = _apply_sequential(group, factors, list(step.order))
@@ -82,4 +82,4 @@ def apply_orthogonalization_steps(
         out = pd.concat(pieces, ignore_index=True)
         if step.renormalize:
             out = standardize_panel(out, factors, "zscore")
-    return out.sort_values(["asset", "datetime"]).reset_index(drop=True)
+    return out.sort_values(["symbol", "timestamp"]).reset_index(drop=True)

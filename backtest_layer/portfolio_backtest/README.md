@@ -419,6 +419,152 @@ evaluator.evaluate("./results/demo_strategy/demo_run")
 - `summary.csv`
 - `metadata.json`
 
+## 3. YAML 配置运行
+
+现在这个目录已经补齐了和 `single_asset_alpha`、`multiple_factor_composite` 类似的配置驱动入口。
+
+新增接口：
+
+- `backtest_layer.portfolio_backtest.load_config(config_path)`：加载并校验 YAML。
+- `backtest_layer.portfolio_backtest.run_from_config(config_path)`：读取输入表、运行回测、可选执行注册评估，并返回结构化结果。
+- `backtest_layer/portfolio_backtest/run_from_config.py`：命令行入口。
+
+### 配置文件结构
+
+推荐使用如下结构：
+
+```yaml
+meta:
+    strategy_name: demo_strategy
+    run_name: demo_run
+    description: optional
+
+inputs:
+    holdings:
+        path: ./holdings.csv
+    kline:
+        path: ./kline.csv
+    tradable:
+        path: ./tradable.csv
+    benchmark:
+        path: ./benchmark.csv
+
+columns:
+    date_col: trade_date
+    symbol_col: symbol
+    weight_col: weight
+    price_col: close
+    tradable_date_col: trade_date
+    tradable_symbol_col: symbol
+    tradable_flag_col: is_tradable
+    benchmark_date_col: trade_date
+    benchmark_return_col: benchmark_return
+
+backtest:
+    annualization: 252
+    return_window: 1
+    fee_rate: 0.0003
+    slippage_rate: 0.0002
+
+output:
+    output_root: ./results
+
+registry:
+    enabled: true
+    min_trade_days: 120
+    min_annual_return: 0.05
+```
+
+说明：
+
+- 所有路径都按“相对配置文件所在目录”解析。
+- `inputs.*.path` 既可以是单个文件，也可以是目录。
+- 目录输入支持 `format: csv|parquet`、`recursive`、`glob`。
+- `inputs.*.rename` 可以把上游字段改成回测器期望字段，适合直接接 `day_aggs` 一类数据。
+
+### Python 用法
+
+```python
+from backtest_layer.portfolio_backtest import run_from_config
+
+result = run_from_config("backtest_layer/portfolio_backtest/examples/mock_portfolio_backtest.yaml")
+
+print(result["output_dir"])
+print(result["backtest"]["summary_df"])
+print(result["registry"])
+```
+
+返回结构里包含：
+
+- `config`
+- `holdings_df`
+- `kline_df`
+- `tradable_df`
+- `benchmark_df`
+- `backtest`
+- `registry`
+- `output_dir`
+- `config_snapshot`
+
+### CLI 用法
+
+```bash
+cd /home/yluel/share/projects/quantsociety_backend_project
+python backtest_layer/portfolio_backtest/run_from_config.py \
+    backtest_layer/portfolio_backtest/examples/mock_portfolio_backtest.yaml
+```
+
+CLI 会输出本次运行的：
+
+- `output_dir`
+- `config_snapshot`
+- `summary`
+- `registry_approved`
+
+### Day Aggs 直连示例
+
+如果 `kline_df` 来自清洗后的 `day_aggs`，可以直接在 YAML 里做列名适配：
+
+```yaml
+inputs:
+    kline:
+        path: /path/to/us_stocks_sip/day_aggs_v1
+        format: parquet
+        recursive: true
+        rename:
+            align_time: trade_date
+            ticker: symbol
+```
+
+这样就不需要额外手工改列名，`run_from_config` 会在加载时统一处理。
+
+### 示例配置
+
+仓库内提供了一个最小可运行样例：
+
+- `backtest_layer/portfolio_backtest/examples/mock_portfolio_backtest.yaml`
+
+以及一个面向真实清洗行情目录的模板：
+
+- `backtest_layer/portfolio_backtest/examples/us_stocks_sip_day_aggs_v1_template.yaml`
+
+这个模板已经把 `kline` 指向当前真实的 `us_stocks_sip/day_aggs_v1` 清洗目录，并配置好了：
+
+- 递归读取 `**/*.parquet`
+- `align_time -> trade_date`
+- `ticker -> symbol`
+
+你只需要把 `holdings.path` 换成自己的组合持仓长表即可。
+
+它直接消费当前目录下的：
+
+- `mock_holdings.csv`
+- `mock_kline.csv`
+
+并把结果输出到：
+
+- `results/demo_strategy/demo_run_from_config/`
+
 这些文件都位于单次 run 目录中，而不是 `./results/demo_strategy/` 这种策略根目录中。
 
 返回字典包括：

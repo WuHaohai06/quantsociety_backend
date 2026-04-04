@@ -149,8 +149,8 @@ class Analyzer:
     """将 :class:`expr.base.Expr` 下降为 :class:`IRNode` 树。"""
 
     def lower(self, expr: Expr) -> AnalysisResult:
-        cols: set[str] = set()
-        lookback = 0
+        cols: set[str] = set()  # 数据依赖列，供数据源只拉必要字段
+        lookback = 0  # 引擎需向前多取的历史 bar 数（滚动窗口上界）
         has_ts = False
         has_cs = False
 

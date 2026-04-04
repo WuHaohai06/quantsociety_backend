@@ -38,8 +38,8 @@ def apply_cse(roots: list[PlanNode]) -> tuple[list[PlanNode], dict[str, PlanNode
     if not roots:
         return [], {}
 
-    counts: dict[str, int] = {}
-    first_seen: dict[str, PlanNode] = {}
+    counts: dict[str, int] = {}  # 结构键 → 在森林中出现过几次
+    first_seen: dict[str, PlanNode] = {}  # 首次出现时保留一份用于 shared_nodes
 
     for root in roots:
         memo: dict[int, str] = {}

@@ -7,6 +7,21 @@ from single_asset_backtest.config import BacktestConfig
 from single_asset_backtest.io import load_ohlcv, load_ohlcv_from_config
 
 
+def _write_aggregate_year(
+    aggregate_root,
+    year,
+    rows,
+):
+    dataset_dir = aggregate_root / "daily_market_summary"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    frame = pd.DataFrame(
+        rows,
+        columns=["ticker", "align_time", "o", "h", "l", "c", "v"],
+    )
+    frame["align_time"] = pd.to_datetime(frame["align_time"], utc=True)
+    frame.to_parquet(dataset_dir / f"daily_market_summary_{year}.parquet", index=False)
+
+
 def test_load_ohlcv_validates_temporal_integrity(tmp_path):
     path = tmp_path / "ohlcv.csv"
     frame = pd.DataFrame(
@@ -63,3 +78,26 @@ def test_load_ohlcv_from_config_matches_gold_alias_file(tmp_path):
     assert list(out.columns) == ["open", "high", "low", "close", "volume"]
     assert len(out) == 2
     assert out.index.is_monotonic_increasing
+
+
+def test_load_ohlcv_from_config_supports_aggregate_bars_daily_summary(tmp_path):
+    aggregate_root = tmp_path / "aggregate_bars"
+    dates = pd.bdate_range("2024-01-01", periods=5, freq="B", tz="UTC")
+    rows = []
+    for index, timestamp in enumerate(dates):
+        rows.append(("AAA", timestamp, 10.0 + index, 11.0 + index, 9.0 + index, 10.5 + index, 1000.0 + index))
+        rows.append(("BBB", timestamp, 30.0 + index, 31.0 + index, 29.0 + index, 30.5 + index, 2000.0 + index))
+    _write_aggregate_year(aggregate_root, 2024, rows)
+
+    out = load_ohlcv_from_config(
+        BacktestConfig(
+            market_data_mode="aggregate_bars_daily_summary",
+            aggregate_bars_root=str(aggregate_root),
+            symbol="AAA",
+            frequency="1d",
+        )
+    )
+
+    assert list(out.columns) == ["open", "high", "low", "close", "volume"]
+    assert len(out) == 5
+    assert out.index.name == "timestamp"

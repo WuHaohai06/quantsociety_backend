@@ -1,0 +1,12 @@
+﻿rule_name,actual_value,threshold,operator,passed,note
+min_trade_days,126.0,120.0,>=,True,
+min_annual_return,0.213952985372428,0.05,>=,True,
+min_sharpe,1.5847411691302518,0.8,>=,True,
+min_calmar,3.384100748533907,0.5,>=,True,
+max_drawdown_limit,-0.0632229951975037,-0.2,>=,True,
+max_annual_volatility,0.1274754770409727,0.4,<=,True,
+min_monthly_win_rate,0.5,0.45,>=,True,
+max_turnover_mean,0.152817579290037,1.0,<=,True,
+min_effective_data_ratio,0.992,0.95,>=,True,
+max_top5_day_pnl_contribution,0.185998222689601,0.5,<=,True,
+__FINAL__,10.0,10.0,passed/total,True,grade=A; pass_rate=100.00%

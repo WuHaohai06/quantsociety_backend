@@ -1,0 +1,38 @@
+meta:
+  portfolio_id: composite_signal_holdings_demo
+  version: v1
+  description: Convert multiple_factor_composite signal to portfolio_backtest holdings.
+
+inputs:
+  signal:
+    path: /path/to/your/composite_signal.parquet
+    format: parquet
+    timestamp_col: timestamp
+    symbol_col: symbol
+    score_col: composite_score
+    selected_flag_col: selected_flag
+    side_col: side
+
+construction:
+  selection_mode: selected_flag
+  weighting_method: equal
+  long_budget: 1.0
+  short_budget: 0.0
+  # If optimizer/risk_control changes gross exposure later, this can re-scale per day.
+  normalize_total_abs_weight: 1.0
+
+optimizer:
+  enabled: false
+  name: noop
+  params: {}
+
+risk_control:
+  enabled: false
+  name: noop
+  params: {}
+
+output:
+  root: ./runs/composite_signal_holdings_demo
+  holdings_filename: holdings.parquet
+  write_selected_signal: true
+  write_raw_holdings: true

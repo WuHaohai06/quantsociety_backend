@@ -1,0 +1,2 @@
+﻿strategy_name,trade_days,total_return,annual_return,annual_volatility,sharpe,sortino,calmar,max_drawdown,monthly_win_rate,avg_turnover,avg_holding_count,avg_gross_exposure,cost_drag,top5_day_pnl_contribution,effective_asset_return_ratio,avg_daily_asset_return_coverage
+demo_strategy,126.0,0.1017953464107697,0.21395298537242802,0.1274754770409727,1.5847411691302518,2.584325233915144,3.384100748533907,-0.06322299519750374,0.5,0.152817579290037,99.2063492063492,0.9920634920634875,0.01065336375049819,0.18599822268960106,0.992,0.992

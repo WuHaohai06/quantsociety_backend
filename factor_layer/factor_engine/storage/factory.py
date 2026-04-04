@@ -47,6 +47,7 @@ def _ensure_no_extra_options(source_type: str, options: dict[str, Any]) -> None:
 def build_data_source(config: Any):
     """根据运行时配置构造单数据源或组合数据源实例。"""
 
+    # YAML 可为 dict 或已解析的 dataclass；统一成 (type, options) 再分支
     source_type, options = _extract_source_spec(config)
     if source_type == "composite":
         anchor_source = _pop_option(options, "anchor", "anchor_source", required=True)

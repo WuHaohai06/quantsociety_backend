@@ -1,0 +1,28 @@
+meta:
+  strategy_name: demo_strategy
+  run_name: demo_run_from_config
+  description: Minimal portfolio_backtest YAML example using the bundled mock CSV inputs.
+
+inputs:
+  holdings:
+    path: ../mock_holdings.csv
+  kline:
+    path: ../mock_kline.csv
+
+columns:
+  date_col: trade_date
+  symbol_col: symbol
+  weight_col: weight
+  price_col: close
+
+backtest:
+  annualization: 252
+  return_window: 1
+  fee_rate: 0.0003
+  slippage_rate: 0.0002
+
+output:
+  output_root: ../results
+
+registry:
+  enabled: true

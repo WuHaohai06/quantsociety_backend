@@ -308,6 +308,65 @@ class TestPipelineIntegration:
         assert isinstance(result, pd.DataFrame)
         errors = TargetPositionSchema.validate(result)
         assert errors == []
+    def test_bridge_rejects_double_lag(self, sample_market_data, tmp_path):
+        """C 侧 shift_bars 与 D 侧 target_lag_bars 不能同时 >0。"""
+        backtest_layer_path = os.path.join(PROJECT_ROOT, "backtest_layer")
+        factor_engine_path = os.path.join(PROJECT_ROOT, "factor_layer", "factor_engine")
+        for p in (backtest_layer_path, factor_engine_path):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+
+        from single_asset_backtest.config import BacktestConfig
+        from strategy_layer.single_asset_alpha.integration.backtest_bridge import (
+            run_pipeline_then_single_asset_backtest,
+        )
+        from strategy_layer.single_asset_alpha.pipeline import create_dual_ma_strategy
+
+        pipeline = create_dual_ma_strategy(symbol="TEST", output_dir=str(tmp_path))
+
+        with pytest.raises(ValueError, match="Detected double lag"):
+            run_pipeline_then_single_asset_backtest(
+                pipeline,
+                market_data=sample_market_data,
+                pipeline_save_outputs=False,
+                backtest_config=BacktestConfig(target_lag_bars=1),
+            )
+
+    def test_bridge_rejects_double_lag_with_attribute_style_mapper_params(self, sample_market_data, tmp_path):
+        """当 mapper.params 为属性对象时，也应正确识别 shift_bars 并拒绝双 lag。"""
+        backtest_layer_path = os.path.join(PROJECT_ROOT, "backtest_layer")
+        factor_engine_path = os.path.join(PROJECT_ROOT, "factor_layer", "factor_engine")
+        for p in (backtest_layer_path, factor_engine_path):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+
+        from single_asset_backtest.config import BacktestConfig
+        from strategy_layer.single_asset_alpha.integration.backtest_bridge import (
+            run_pipeline_then_single_asset_backtest,
+        )
+        from strategy_layer.single_asset_alpha.pipeline import create_dual_ma_strategy
+
+        pipeline = create_dual_ma_strategy(symbol="TEST", output_dir=str(tmp_path))
+
+        class _MapperParamsAttrProxy:
+            def __init__(self, base: dict, shift_bars: int):
+                self._base = dict(base)
+                self.shift_bars = shift_bars
+
+            def get(self, key, default=None):
+                if key == "shift_bars":
+                    return self.shift_bars
+                return self._base.get(key, default)
+
+        pipeline.position_mapper.params = _MapperParamsAttrProxy(pipeline.position_mapper.params, 1)
+
+        with pytest.raises(ValueError, match="Detected double lag"):
+            run_pipeline_then_single_asset_backtest(
+                pipeline,
+                market_data=sample_market_data,
+                pipeline_save_outputs=False,
+                backtest_config=BacktestConfig(target_lag_bars=1),
+            )
 
 
 if __name__ == "__main__":

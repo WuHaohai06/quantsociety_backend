@@ -15,7 +15,7 @@
 ## 运行方式
 
 ```bash
-cd /home/yluel/share/projects/quantsociety_backend_project/strategy_layer/multiple_factor_composite && \
+cd /home/yluel/share/projects/quantsociety_backend_project/strategy_layer/portfolio_alpha/multiple_factor_composite && \
 /home/yluel/share/projects/quantsociety_backend_project/.venv/bin/python run_from_config.py \
 examples/day_aggs_v1_fundamental_signal.yaml
 ```
@@ -34,8 +34,14 @@ examples/day_aggs_v1_fundamental_signal.yaml
 
 - source.factor_lake_root: 因子 lake 根目录
 - factors: 输入因子列表，可区分 compose=true/false
-- auxiliary_sources: 行业、标签、股票池等辅助数据
+- auxiliary_sources: 行业、标签、股票池等辅助数据；默认按 timestamp/symbol 读取，旧数据可显式传 timestamp_col/symbol_col
 - neutralization.steps: group_demean / ols
 - orthogonalization.steps: sequential / symmetric
 - composition.weighting: equal / custom / ic
 - output.root: 输出目录
+
+## 内部数据契约
+
+- 模块内 canonical panel 统一使用 timestamp 和 symbol 两列
+- factor lake 物理落盘仍然是 factor_engine 的 datetime/asset/value，但在 reader 边界就会转成 timestamp/symbol
+- signals/composite_signal.parquet 与各类中间 panel 现在也统一输出 timestamp/symbol

@@ -1,0 +1,174 @@
+{
+  "strategy_name": "demo_strategy",
+  "evaluation_time": "2026-04-04T22:45:31.537565",
+  "passed_rules": 10,
+  "total_rules": 10,
+  "pass_rate": 1.0,
+  "grade": "A",
+  "approved": true,
+  "rules": [
+    {
+      "rule_name": "min_trade_days",
+      "actual_value": 126.0,
+      "threshold": 120.0,
+      "operator": ">=",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "rule_name": "min_annual_return",
+      "actual_value": 0.213952985372428,
+      "threshold": 0.05,
+      "operator": ">=",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "rule_name": "min_sharpe",
+      "actual_value": 1.5847411691302518,
+      "threshold": 0.8,
+      "operator": ">=",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "rule_name": "min_calmar",
+      "actual_value": 3.384100748533907,
+      "threshold": 0.5,
+      "operator": ">=",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "rule_name": "max_drawdown_limit",
+      "actual_value": -0.0632229951975037,
+      "threshold": -0.2,
+      "operator": ">=",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "rule_name": "max_annual_volatility",
+      "actual_value": 0.1274754770409727,
+      "threshold": 0.4,
+      "operator": "<=",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "rule_name": "min_monthly_win_rate",
+      "actual_value": 0.5,
+      "threshold": 0.45,
+      "operator": ">=",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "rule_name": "max_turnover_mean",
+      "actual_value": 0.152817579290037,
+      "threshold": 1.0,
+      "operator": "<=",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "rule_name": "min_effective_data_ratio",
+      "actual_value": 0.992,
+      "threshold": 0.95,
+      "operator": ">=",
+      "passed": true,
+      "note": ""
+    },
+    {
+      "rule_name": "max_top5_day_pnl_contribution",
+      "actual_value": 0.185998222689601,
+      "threshold": 0.5,
+      "operator": "<=",
+      "passed": true,
+      "note": ""
+    }
+  ],
+  "final_decision": {
+    "rule_name": "__FINAL__",
+    "actual_value": 10.0,
+    "threshold": 10.0,
+    "operator": "passed/total",
+    "passed": true,
+    "note": "grade=A; pass_rate=100.00%"
+  },
+  "summary_snapshot": {
+    "strategy_name": "demo_strategy",
+    "trade_days": 126.0,
+    "total_return": 0.1017953464107697,
+    "annual_return": 0.213952985372428,
+    "annual_volatility": 0.1274754770409727,
+    "sharpe": 1.5847411691302518,
+    "sortino": 2.584325233915144,
+    "calmar": 3.384100748533907,
+    "max_drawdown": -0.0632229951975037,
+    "monthly_win_rate": 0.5,
+    "avg_turnover": 0.152817579290037,
+    "avg_holding_count": 99.2063492063492,
+    "avg_gross_exposure": 0.9920634920634877,
+    "cost_drag": 0.0106533637504981,
+    "top5_day_pnl_contribution": 0.185998222689601,
+    "effective_asset_return_ratio": 0.992,
+    "avg_daily_asset_return_coverage": 0.992
+  },
+  "metadata_snapshot": {
+    "strategy_name": "demo_strategy",
+    "run_name": "demo_run_from_config",
+    "generated_at": "2026-04-04T22:45:31.523927",
+    "annualization": 252,
+    "weight_execution_lag": 1,
+    "return_window": 1,
+    "fee_rate": 0.0003,
+    "slippage_rate": 0.0002,
+    "date_col": "trade_date",
+    "symbol_col": "symbol",
+    "weight_col": "weight",
+    "price_col": "close",
+    "tradable_date_col": "trade_date",
+    "tradable_symbol_col": "symbol",
+    "tradable_flag_col": "is_tradable",
+    "benchmark_date_col": "trade_date",
+    "benchmark_return_col": "benchmark_return",
+    "has_benchmark": false,
+    "has_tradable_df": false,
+    "input_summary": {
+      "holdings_rows": 12600,
+      "kline_rows": 12600,
+      "returns_rows": 126,
+      "metrics_rows": 40,
+      "holdings_date_min": "2024-01-02 00:00:00",
+      "holdings_date_max": "2024-06-25 00:00:00",
+      "kline_date_min": "2024-01-02 00:00:00",
+      "kline_date_max": "2024-06-25 00:00:00",
+      "unique_symbols_in_holdings": 100,
+      "unique_symbols_in_kline": 100
+    },
+    "panel_summary": {
+      "weight_wide_shape": [
+        126,
+        100
+      ],
+      "price_wide_shape": [
+        126,
+        100
+      ],
+      "weight_aligned_shape": [
+        126,
+        100
+      ],
+      "asset_return_raw_shape": [
+        126,
+        100
+      ],
+      "aligned_dates": 126,
+      "aligned_symbols": 100,
+      "nonzero_weight_cells": 12500,
+      "valid_asset_return_cells": 12500,
+      "tradable_true_cells": 12500
+    }
+  }
+}

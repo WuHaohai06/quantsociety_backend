@@ -42,8 +42,8 @@ class FactorSpec:
 class AuxiliarySourceConfig:
     name: str
     path: str
-    timestamp_col: str = "datetime"
-    asset_col: str = "asset"
+    timestamp_col: str = "timestamp"
+    symbol_col: str = "symbol"
     columns: dict[str, str] = field(default_factory=dict)
     recursive: bool = True
     align_method: str = "exact"
@@ -253,8 +253,8 @@ def load_config(path: str | Path) -> CompositeSignalConfig:
             AuxiliarySourceConfig(
                 name=name,
                 path=data_path,
-                timestamp_col=str(raw.get("timestamp_col") or "datetime"),
-                asset_col=str(raw.get("asset_col") or "asset"),
+                timestamp_col=str(raw.get("timestamp_col") or "timestamp"),
+                symbol_col=str(raw.get("symbol_col") or raw.get("asset_col") or "symbol"),
                 columns=dict(raw.get("columns") or {}),
                 recursive=bool(raw.get("recursive", True)),
                 align_method=str(raw.get("align_method") or "exact"),

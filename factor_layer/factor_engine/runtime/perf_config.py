@@ -16,6 +16,7 @@ def _env_int(name: str, default: int | None) -> int | None:
         return default
     try:
         v = int(raw)
+        # 非正数视为未配置，避免误设 0 导致下游除零或无限并行
         return v if v > 0 else default
     except ValueError:
         return default
@@ -41,6 +42,7 @@ def _env_backtest_engine(name: str, default: BacktestExecutionEngine) -> Backtes
     raw = _env_str(name, default).lower()
     if raw in {"python", "numpy", "numba", "auto"}:
         return raw  # type: ignore[return-value]
+    # 拼写错误时静默回退 default，避免启动失败；需要时可打日志
     return default
 
 

@@ -1,0 +1,37 @@
+meta:
+  portfolio_id: demo_portfolio_holdings
+  version: v1
+  description: Convert demo composite signal into portfolio holdings.
+
+inputs:
+  signal:
+    path: ../outputs/composite_signal_run/signals/composite_signal.parquet
+    format: parquet
+    timestamp_col: timestamp
+    symbol_col: symbol
+    score_col: composite_score
+    selected_flag_col: selected_flag
+    side_col: side
+
+construction:
+  selection_mode: selected_flag
+  weighting_method: equal
+  long_budget: 1.0
+  short_budget: 0.0
+  normalize_total_abs_weight: 1.0
+
+optimizer:
+  enabled: false
+  name: noop
+  params: {}
+
+risk_control:
+  enabled: false
+  name: noop
+  params: {}
+
+output:
+  root: ../outputs/holdings_run
+  holdings_filename: holdings.parquet
+  write_selected_signal: true
+  write_raw_holdings: true

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""回测指标：按 ``metrics_profile`` 分层扩展（core/standard/industrial）；年化因子由时间索引推断 bar 频率。"""
+"""回测指标：按 ``metrics_profile`` 分层扩展（fast/core/standard/industrial）；年化因子由时间索引推断 bar 频率。"""
 import numpy as np
 import pandas as pd
 
@@ -289,7 +289,10 @@ def compute_backtest_metrics(
     trade_ledger: list[dict] | None = None,
     risk_free_rate_annual: float = 0.0,
 ) -> dict:
-    """计算核心指标并按 ``profile`` 追加 standard/industrial 扩展；换手由 ``realized_position`` 差分近似。"""
+    """计算核心指标并按 ``profile`` 追加 standard/industrial 扩展；换手由 ``realized_position`` 差分近似。
+
+    ``fast`` 与 ``core`` 输出完全同构：只保留 REQUIRED_METRICS_KEYS，避免扩展指标开销。
+    """
     ann = annualization_factor(equity_curve.index)
     total_return = _safe_float(equity_curve.iloc[-1] / equity_curve.iloc[0] - 1.0) if len(equity_curve) else 0.0
     annual_return = _safe_float((1.0 + total_return) ** (ann / max(1.0, len(equity_curve))) - 1.0) if len(equity_curve) else 0.0
@@ -317,6 +320,7 @@ def compute_backtest_metrics(
     }
 
     if profile not in {"standard", "industrial"}:
+        # fast/core 统一走核心指标集合，保证输出契约稳定且最小化计算量。
         return metrics
 
     standard_metrics = _standard_profile_metrics(

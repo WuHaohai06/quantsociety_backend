@@ -59,13 +59,13 @@ def apply_neutralization_steps(
             if not step.group_column:
                 raise ValueError("group_demean 需要 group_column")
             for column in target_columns:
-                group_mean = out.groupby(["datetime", step.group_column])[column].transform("mean")
+                group_mean = out.groupby(["timestamp", step.group_column])[column].transform("mean")
                 out[column] = out[column] - group_mean
         elif step.method == "ols":
             if not step.control_columns:
                 raise ValueError("ols neutralization 需要 control_columns")
             pieces = []
-            for _, group in out.groupby("datetime", sort=False):
+            for _, group in out.groupby("timestamp", sort=False):
                 group = group.copy()
                 controls = _build_design_matrix(group, step.control_columns, step.add_intercept)
                 for column in target_columns:
@@ -74,4 +74,4 @@ def apply_neutralization_steps(
             out = pd.concat(pieces, ignore_index=True)
         else:
             raise ValueError(f"Unsupported neutralization method: {step.method}")
-    return out.sort_values(["asset", "datetime"]).reset_index(drop=True)
+    return out.sort_values(["symbol", "timestamp"]).reset_index(drop=True)

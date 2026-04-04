@@ -1,0 +1,46 @@
+meta:
+  strategy_id: aggregate_bars_dual_ma_demo
+  version: v1
+  description: Run DualMA directly on massive_parquet aggregate_bars daily_market_summary data.
+
+instrument:
+  symbol: A
+
+market_data:
+  mode: aggregate_bars_daily_summary
+  aggregate_bars_root: /home/yluel/share/projects/massive_parquet/cleaned_massive_data/aggregate_bars
+  aggregate_dataset: daily_market_summary
+  aggregate_symbol_column: ticker
+  aggregate_timestamp_column: align_time
+  aggregate_columns:
+    open: o
+    high: h
+    low: l
+    close: c
+    volume: v
+  freq: 1d
+  start_date: 2024-01-01
+  end_date: 2024-12-31
+
+signal:
+  type: dual_ma
+  name: DualMA
+  params:
+    fast_window: 5
+    slow_window: 20
+    ma_type: sma
+
+position_mapper:
+  type: threshold
+  name: ThresholdMapper
+  params:
+    long_entry_threshold: 0.5
+    long_exit_threshold: -0.15
+    allow_short: false
+    shift_bars: 1
+
+output:
+  output_dir: ../../../../outputs/single_asset_alpha/aggregate_bars_dual_ma_demo
+  output_format: parquet
+  save_full_timeseries: true
+  save_debounced: true

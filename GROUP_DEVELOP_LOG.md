@@ -9,6 +9,37 @@
 3. 工作结果：完成了因子落盘测试并产出了可供下游研究员参考的因子文件。示例文件路径：/home/yluel/share/projects/factor_data/factors/day_aggs_v1_fundamental_asset_scale_rank_2016_2025_v1/year=2016/data.parquet
 - git push 说明参考：已完成 factor_engine 的 cleaned_parquet 接入、多数据源合并能力和示例因子落盘验证，相关代码与配置已整理，可按功能模块拆分后推送。
 
+## 2026-04-03
+
+### 孙海崴（研究员 D · 单标回测 / `backtest_layer`）
+
+- **当前任务**：维护「目标驱动」回测子系统（单标执行 + 多标组合），与研究员 C 的 **`target_position`** 交付在数据契约上闭环；文档与示例可复现。
+- **本次进展（按代码能力归纳）**：
+  - **`single_asset_backtest`**：单标的 **`run_single_asset_backtest`**（Backtrader 执行、佣金/滑点、可选 **`trade_ledger`**、分层 **`metrics_profile`**、**`target_lag_bars`** 等与 ADR 对齐的审计字段）；同包 **多标的组合** **`run_multi_asset_backtest`**（**`target_weights`** → 逐 bar 执行与成本、**`executed_weights`**、**`portfolio_weight_lag_bars`**、多档执行内核与 **`FACTOR_BACKTEST_EXECUTION_ENGINE`**、组合指纹与 **`summary` 中 requested/resolved** 等）。
+  - **冻结协议**：`contracts` + **`build_backtest_report`** 保证 **`returns` / `metrics` / `summary`** 必需键；**`strategy_registry` / `strategy_library`** 支持策略名版本化（D-3 与任务清单一致）。
+  - **与研究员 C 衔接**：在 **`single_asset_alpha`** 侧增加 **`integration/backtest_bridge`**（C 的 **`StrategyPipeline`** 产出 **`target_position`** 后直接调用 **`run_single_asset_backtest`**）及 **`examples/c_to_d_end_to_end`**；两侧 README 写明 **`target_position`** 列约定与 **滞后/频率** 需联合约定，避免重复 shift。
+  - **测试与示例**：专项测试覆盖契约、IO、单/多资产、报告 schema、可复现指纹、扩展指标等；示例脚本演示单标与多标调用方式。
+- **当前产出**：可交付的 **`target_position` / `target_weights` → 统一报告结构** 链路；C–D 端到端示例与 bridge API；子系统长篇说明见 **`backtest_layer/single_asset_backtest/README.md`**。
+- **当前问题 / 风险**：C 侧状态机若已含 **T→T+1** 映射，须与 D 侧 **`target_lag_bars`** 显式对齐，避免逻辑上双重滞后；行情与 **`target_position` 时间轴**须同频、同日历。
+- **下一步**：与 C 冻结「滞后只在一侧生效」的默认配置；若业务需要，再补因子引擎输出接入 C-1 的示例路径。
+- **需要谁配合**：研究员 C 维持 **`TargetPositionSchema`** 字段语义；若组合侧与研究员 B 共用策略库命名，再对齐 **strategy_name@version** 登记习惯。
+
+- **关联文件 / 结果**：
+  - 核心包：`backtest_layer/single_asset_backtest/`（`runner.py`、`config.py`、`contracts.py`、`report.py`、`strategy_registry.py`、`strategy_library.py` 等）
+  - 专项测试：`backtest_layer/tests/test_backtest_*.py`；示例：`backtest_layer/examples/backtest_*.py`
+  - C–D：`strategy_layer/single_asset_alpha/integration/backtest_bridge.py`、`strategy_layer/single_asset_alpha/examples/c_to_d_end_to_end.py`
+  - 协议：`factor_layer/factor_engine/docs/adr_backtest_target_position.md`
+
+- **git push 说明（示例，可按实际改动删减）**：
+
+```
+backtest: 目标驱动回测能力与 C-target_position 衔接文档/示例
+
+- single_asset_backtest：单标 Backtrader + 多标组合会计、冻结 returns/metrics/summary 与策略注册表
+- 与 single_asset_alpha：backtest_bridge + c_to_d_end_to_end；README 约定滞后与契约
+- 专项测试与单/多标 examples；GROUP_DEVELOP_LOG 2026-04-03 研究员 D
+```
+
 ##
 
 这份文件就当团队的公共工作报告来用，不用写得太正式。

@@ -59,30 +59,30 @@ class ATRVolatilityMapper(BasePositionMapper):
         annualize = self.params.get("annualize_factor", 252)
         shift_bars = self.params.get("shift_bars", 1)
 
-        # 计算 ATR (向量化)
         high = market_data["high"]
         low = market_data["low"]
         close = market_data["close"]
 
+        # 经典 TR：三根 bar 内最大真实波幅，再对 TR 做 SMA 得 ATR（非 Wilder ATR，与部分软件略有差异）
         tr1 = high - low
         tr2 = (high - close.shift(1)).abs()
         tr3 = (low - close.shift(1)).abs()
         true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         atr = true_range.rolling(window=atr_period, min_periods=atr_period).mean()
 
-        # ATR 中位数 (用于归一化)
+        # 用较长窗的中位数当「典型波动」，atr_ratio>1 表示当前比近期更躁
         atr_median = atr.rolling(
             window=atr_period * 10, min_periods=atr_period * 2
         ).median()
         atr_ratio = (atr / atr_median.clip(lower=1e-10)).fillna(1.0)
 
-        # 动态阈值: 高波动→阈值放大→更难触发开仓
+        # 波动大 → 阈值抬高 → 减少噪声开仓；exit_buffer 把平仓线设在开仓线内侧形成滞回
         dynamic_long_entry = base_long * (atr_ratio ** vol_scale)
         dynamic_long_exit = dynamic_long_entry * exit_buffer
         dynamic_short_entry = base_short * (atr_ratio ** vol_scale)
         dynamic_short_exit = dynamic_short_entry * exit_buffer
 
-        # 波动率仓位缩放: 用年化收益率波动率
+        # 实现波动率越高，仓位因子越小（近似风险平价）；annualize 需与 bar 频率一致
         bar_returns = close.pct_change()
         realized_vol = bar_returns.rolling(
             window=atr_period * 2, min_periods=atr_period
@@ -91,7 +91,7 @@ class ATRVolatilityMapper(BasePositionMapper):
             lower=min_pos, upper=max_pos
         )
 
-        # 状态机
+        # 路径依赖状态机，必须用循环；阈值与仓位上限每 bar 可变
         n = len(signals)
         positions = np.zeros(n)
         actions = np.full(n, ActionName.HOLD.value, dtype=object)
@@ -132,7 +132,7 @@ class ATRVolatilityMapper(BasePositionMapper):
                         current_state = 0.0
                         actions[i] = ActionName.EXIT_LONG.value
                 else:
-                    # 仓位缩放更新
+                    # 仍持有多头，但按新波动率更新目标杠杆（动作记 HOLD）
                     current_state = size
                     actions[i] = ActionName.HOLD.value
             else:
@@ -158,7 +158,6 @@ class ATRVolatilityMapper(BasePositionMapper):
             index=signals.index,
         )
 
-        # ★ 防未来函数
-        df = self.apply_shift(df, shift_bars=shift_bars)
+        df = self.apply_shift(df, shift_bars=shift_bars)  # 与 SimpleMapper 一致，默认 T+1 生效
 
         return df

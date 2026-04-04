@@ -56,7 +56,7 @@ def _fillna_series(series: pd.Series, method: str) -> pd.Series:
 def standardize_panel(panel: pd.DataFrame, factor_columns: list[str], method: str) -> pd.DataFrame:
     out = panel.copy()
     for column in factor_columns:
-        out[column] = out.groupby("datetime", group_keys=False)[column].apply(
+        out[column] = out.groupby("timestamp", group_keys=False)[column].apply(
             lambda series: _standardize_series(series.astype(float), method)
         )
     return out
@@ -69,7 +69,7 @@ def preprocess_panel(
 ) -> pd.DataFrame:
     out = panel.copy()
     for column in factor_columns:
-        out[column] = out.groupby("datetime", group_keys=False)[column].apply(
+        out[column] = out.groupby("timestamp", group_keys=False)[column].apply(
             lambda series: _winsorize_series(
                 series.astype(float),
                 config.winsorize.method if config.winsorize.enabled else "none",
@@ -77,10 +77,10 @@ def preprocess_panel(
                 config.winsorize.upper,
             )
         )
-        out[column] = out.groupby("datetime", group_keys=False)[column].apply(
+        out[column] = out.groupby("timestamp", group_keys=False)[column].apply(
             lambda series: _standardize_series(series.astype(float), config.standardize.method)
         )
-        out[column] = out.groupby("datetime", group_keys=False)[column].apply(
+        out[column] = out.groupby("timestamp", group_keys=False)[column].apply(
             lambda series: _fillna_series(series.astype(float), config.fillna.method)
         )
     out = out.replace([np.inf, -np.inf], np.nan)

@@ -1,0 +1,30 @@
+meta:
+  strategy_name: demo_portfolio_multi_factor
+  run_name: demo_portfolio_e2e
+  description: Self-contained portfolio backtest demo using generated holdings.
+
+inputs:
+  holdings:
+    path: ../outputs/holdings_run/holdings/holdings.parquet
+    format: parquet
+  kline:
+    path: ../inputs/mock_kline.parquet
+    format: parquet
+
+columns:
+  date_col: trade_date
+  symbol_col: symbol
+  weight_col: weight
+  price_col: close
+
+backtest:
+  annualization: 252
+  return_window: 1
+  fee_rate: 0.0003
+  slippage_rate: 0.0002
+
+output:
+  output_root: ../outputs/backtest_run
+
+registry:
+  enabled: false

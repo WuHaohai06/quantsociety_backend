@@ -44,12 +44,12 @@ def _build_target_position_strategy(bt):
 
         def next(self):
             self._bar_index += 1
+            ts = self.data.datetime.datetime(0).replace(tzinfo=None)
 
             # 当前 bar 的目标仓位：优先用预计算数组（与行情对齐），否则按时间戳查 Series
             if self._target_values is not None and 0 <= self._bar_index < len(self._target_values):
                 target = float(self._target_values[self._bar_index])
             else:
-                ts = self.data.datetime.datetime(0).replace(tzinfo=None)
                 target = float(self._target_series.get(ts, 0.0))
 
             if not self._allow_short and target < 0:
@@ -64,7 +64,6 @@ def _build_target_position_strategy(bt):
                 self.order_target_percent(target=target)
                 self._last_target = target
 
-            ts = self.data.datetime.datetime(0).replace(tzinfo=None)
             self._record_bar(ts, target)
 
     return _TargetPositionStrategy

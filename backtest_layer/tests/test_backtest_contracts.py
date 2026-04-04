@@ -37,6 +37,18 @@ def test_validate_target_position_reject_out_of_range_strict():
         validate_target_position(frame, strict=True)
 
 
+def test_validate_target_position_reject_duplicate_timestamps():
+    frame = pd.DataFrame(
+        {
+            "timestamp": ["2026-01-01", "2026-01-01"],
+            "target_position": [0.1, 0.2],
+        }
+    )
+
+    with pytest.raises(ValueError, match="duplicate timestamps"):
+        validate_target_position(frame)
+
+
 def test_align_target_position_to_index_uses_ffill():
     s = pd.Series(
         [0.1, -0.2],

@@ -28,7 +28,7 @@ def _compute_ic_for_factor(
     correlation: str,
 ) -> float:
     ic_values = []
-    for _, group in panel.groupby("datetime", sort=False):
+    for _, group in panel.groupby("timestamp", sort=False):
         mask = group[[factor, target_column]].notna().all(axis=1)
         if mask.sum() < 2:
             continue
@@ -50,18 +50,18 @@ def compute_weight_history(
     factor_columns: list[str],
     config: WeightingConfig,
 ) -> pd.DataFrame:
-    dates = sorted(pd.unique(panel["datetime"]))
+    dates = sorted(pd.unique(panel["timestamp"]))
     records: list[dict[str, object]] = []
     if config.method == "equal":
         weights = _equal_weights(factor_columns)
         for date in dates:
-            records.append({"datetime": date, **weights})
+            records.append({"timestamp": date, **weights})
         return pd.DataFrame(records)
 
     if config.method == "custom":
         weights = _normalize_weight_map(config.custom_weights, factor_columns)
         for date in dates:
-            records.append({"datetime": date, **weights})
+            records.append({"timestamp": date, **weights})
         return pd.DataFrame(records)
 
     if config.method != "ic":
@@ -77,9 +77,9 @@ def compute_weight_history(
     for index, current_date in enumerate(dates):
         history_dates = dates[max(0, index - config.lookback_periods) : index]
         if len(history_dates) < config.min_history:
-            records.append({"datetime": current_date, **fallback_weights})
+            records.append({"timestamp": current_date, **fallback_weights})
             continue
-        history = panel.loc[panel["datetime"].isin(history_dates)]
+        history = panel.loc[panel["timestamp"].isin(history_dates)]
         raw_weights = {
             factor: _compute_ic_for_factor(
                 history,
@@ -97,7 +97,7 @@ def compute_weight_history(
         if not usable_weights:
             usable_weights = fallback_weights
         normalized = _normalize_weight_map(usable_weights, factor_columns)
-        records.append({"datetime": current_date, **normalized})
+        records.append({"timestamp": current_date, **normalized})
     return pd.DataFrame(records)
 
 
@@ -107,7 +107,7 @@ def compose_signal(
     weight_history: pd.DataFrame,
     config: CompositionConfig,
 ) -> pd.DataFrame:
-    merged = panel.merge(weight_history, on="datetime", suffixes=("", "__weight"), how="left")
+    merged = panel.merge(weight_history, on="timestamp", suffixes=("", "__weight"), how="left")
     weight_columns = {factor: f"{factor}__weight" for factor in factor_columns}
     score = np.zeros(len(merged), dtype=float)
     for factor in factor_columns:
@@ -121,24 +121,24 @@ def compose_signal(
     elif config.final_transform != "none":
         raise ValueError(f"Unsupported final_transform: {config.final_transform}")
 
-    merged["rank"] = merged.groupby("datetime")[config.score_column].rank(ascending=False, method="average")
+    merged["rank"] = merged.groupby("timestamp")[config.score_column].rank(ascending=False, method="average")
     merged["selected_flag"] = False
     merged["side"] = "NONE"
     if config.long_top_k is not None:
-        long_mask = merged.groupby("datetime")[config.score_column].rank(ascending=False, method="first") <= int(config.long_top_k)
+        long_mask = merged.groupby("timestamp")[config.score_column].rank(ascending=False, method="first") <= int(config.long_top_k)
         merged.loc[long_mask, "selected_flag"] = True
         merged.loc[long_mask, "side"] = "LONG"
     if config.short_bottom_k is not None:
-        short_mask = merged.groupby("datetime")[config.score_column].rank(ascending=True, method="first") <= int(config.short_bottom_k)
+        short_mask = merged.groupby("timestamp")[config.score_column].rank(ascending=True, method="first") <= int(config.short_bottom_k)
         merged.loc[short_mask, "selected_flag"] = True
         merged.loc[short_mask, "side"] = "SHORT"
 
     output_columns = [
-        "datetime",
-        "asset",
+        "timestamp",
+        "symbol",
         config.score_column,
         "rank",
         "selected_flag",
         "side",
     ]
-    return merged[output_columns].sort_values(["datetime", "rank", "asset"]).reset_index(drop=True)
+    return merged[output_columns].sort_values(["timestamp", "rank", "symbol"]).reset_index(drop=True)
