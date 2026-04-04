@@ -84,16 +84,20 @@ def build_data_source(config: Any):
     fields = _pop_option(options, "fields", "field_mapping", default=None)
 
     if source_type == "parquet_kline":
+        # KlineParquetSource 使用 ``instrument_column`` / ``timestamp_column`` 命名（与 YAML 中 instrument_col 别名兼容）
         source = KlineParquetSource(
             root=root,
-            instrument_col=_pop_option(options, "instrument_col", "instrument_column", default=None),
-            timestamp_col=_pop_option(options, "timestamp_col", "timestamp_column", default=None),
+            instrument_column=_pop_option(
+                options, "instrument_col", "instrument_column", default="ticker"
+            ),
+            timestamp_column=_pop_option(
+                options, "timestamp_col", "timestamp_column", default="window_start"
+            ),
             fields=fields,
             max_files=max_files,
             timestamp_unit=_pop_option(options, "timestamp_unit", default="ns"),
             start_date=start_date,
             end_date=end_date,
-            recursive=recursive,
         )
     elif source_type in {"multi_parquet", "parquet"}:
         source = ParquetSource(

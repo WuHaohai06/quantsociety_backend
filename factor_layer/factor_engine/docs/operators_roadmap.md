@@ -37,14 +37,16 @@
 | 与 WQ `indneutralize` | 与 **`group_neutralize(x, sector)`** 语义一致：组内去均值 | 说明 |
 | 工程上下文 | `orthogonalize`（截面 Gram-Schmidt）`change_instrument`（基准列约定） | 已实现 |
 | 表达式子树缓存 | `ExecutionContext.cache` + `PandasBackend` 结构键缓存 | MVP 已实现 |
-| 三角函数 sin/cos | `sin` `cos`（DSL 同名） | 已实现（Pandas / Polars 子集） |
+| 三角函数 sin/cos/exp | `sin` `cos` `exp`（DSL 同名） | 已实现（Pandas / Polars 子集） |
 | 向量 rolling | `vec_avg` `vec_sum` | 仅编译 + stub（路径 B：需 Parquet 向量列 / ndarray 契约后再实装） |
 | LOB / VPIN / 高频微观 | `lob_ofi_stub`、`micro_vpin_stub`、`micro_spread_stub` 等（见 `MICROSTRUCTURE_STUB_OPS`） | 仅接口 stub（执行 `NotImplementedError`） |
 | PiT / 财报 / 分析师 / 内部人 | `fundamental_*_stub`、`days_since_*`、`analyst_*`、`insider_*` 等（见 `FUNDAMENTAL_STUB_OPS`） | 仅接口 stub |
 | 另类 / NLP / ESG / 供应链 | `alt_*_stub`（见 `ALTERNATIVE_STUB_OPS`） | 仅接口 stub |
 | Welford / RLS 显式算子 | — | 规划中（可与 `ts_*` 内部优化合并） |
-| PolarsBackend | `column` `literal` `add`/`sub`/`mul`/`div` `rank` `ts_mean` `sin` `cos` | 部分/可选（子集；安装 `factor-engine[polars]`） |
+| PolarsBackend | 子集：`column` `literal` `plan_ref` 四则 `rank` `zscore` `ts_mean` `ts_delay` `ts_std`/`ts_std_dev` `ts_sum` 一元 `abs`·`log`·`sqrt`·`sign`·`sin`·`cos`·`exp`；可选 **`polars_lazy`** / `FACTOR_ENGINE_POLARS_LAZY`（LazyFrame） | 部分/可选（安装 `factor-engine[polars]`） |
 | 量纲 / AST-TED / 复杂度惩罚 | planner / 挖掘引擎层 | 系统层（非单点 op） |
+| 华泰《GPT 因子工厂 2.0》图表 9/11（基本面 + 高频） | 等价映射见各算子 **docstring**；图表 11 分钟类为 `intraday_*_stub`（`INTRADAY_STUB_OPS`，仅编译 + stub） | 已实现对照 + stub；[`huatai_factor_factory_operator_catalog.md`](huatai_factor_factory_operator_catalog.md) |
+| 分钟 / 日内序列（华泰图表 11） | `intraday_agg_*_stub`、`intraday_explode_*_stub`、`intraday_tp_sample_stub` 等 | 仅编译（`expr/intraday.py`） |
 
 ## 可选加速依赖（阶段 A）
 
@@ -52,12 +54,15 @@
 |----|------|
 | `TA-Lib` | 上述技术指标中 MACD/CCI/STOCH/MFI/OBV/DEMA/WMA/KAMA 等优先走 C 实现；无库时多数有 pandas 退化 |
 | `Bottleneck` | `ts_mean` / `ts_max` / `ts_min` 已接线可选 `move_*`（见 `pandas_backend`；可 `FACTOR_ENGINE_DISABLE_BOTTLENECK=1` 关闭） |
-| `numba` | 后续阶段（报告第五部分） |
-| `polars` | PolarsBackend 子集（见上表） |
-| `joblib` | 多因子层并行示例（`examples/run_factors_joblib.py`），非 rolling 内并行 |
+| `numba` | `ts_mean` 可选路径（`FACTOR_ENGINE_USE_NUMBA`；见 `backend/numba_kernels.py`） |
+| `polars` | PolarsBackend 子集（见上表）；Lazy 见 `FACTOR_ENGINE_POLARS_LAZY` |
+| `modin` | `PandasBackend` 可选 `modin.pandas` API（`pandas_modin` / `FACTOR_ENGINE_USE_MODIN`；见 `backend/pandas_compat.py`） |
+| `joblib` | `FactorEngine.run_many_parallel` 与示例（`examples/run_factors_joblib.py`），非 rolling 内并行 |
 
 ## 相关文档
 
 - [`operators_semantics.md`](operators_semantics.md) — Bar/截面语义、DSL 限制  
 - [`adr_context_benchmark.md`](adr_context_benchmark.md) — `change_instrument` 基准列约定  
+- [`huatai_factor_factory_operator_catalog.md`](huatai_factor_factory_operator_catalog.md) — 华泰 GPT 因子工厂 2.0 算子 ↔ 本引擎规范名（去重）  
+- [`adr_huatai_factor_factory_operators.md`](adr_huatai_factor_factory_operators.md) — 华泰算子命名与扩展策略（ADR）  
 - [`changelog_shw.md`](changelog_shw.md) — 版本记录  

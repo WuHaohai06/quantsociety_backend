@@ -1,0 +1,56 @@
+{
+  "strategy_name": "demo_strategy",
+  "run_name": "demo_run",
+  "generated_at": "2026-04-03T22:44:22.406394",
+  "annualization": 252,
+  "weight_execution_lag": 1,
+  "return_window": 1,
+  "fee_rate": 0.0003,
+  "slippage_rate": 0.0002,
+  "date_col": "trade_date",
+  "symbol_col": "symbol",
+  "weight_col": "weight",
+  "price_col": "close",
+  "tradable_date_col": "trade_date",
+  "tradable_symbol_col": "symbol",
+  "tradable_flag_col": "is_tradable",
+  "benchmark_date_col": "trade_date",
+  "benchmark_return_col": "benchmark_return",
+  "has_benchmark": false,
+  "has_tradable_df": false,
+  "input_summary": {
+    "holdings_rows": 12600,
+    "kline_rows": 12600,
+    "returns_rows": 126,
+    "metrics_rows": 40,
+    "holdings_date_min": "2024-01-02 00:00:00",
+    "holdings_date_max": "2024-06-25 00:00:00",
+    "kline_date_min": "2024-01-02 00:00:00",
+    "kline_date_max": "2024-06-25 00:00:00",
+    "unique_symbols_in_holdings": 100,
+    "unique_symbols_in_kline": 100
+  },
+  "panel_summary": {
+    "weight_wide_shape": [
+      126,
+      100
+    ],
+    "price_wide_shape": [
+      126,
+      100
+    ],
+    "weight_aligned_shape": [
+      126,
+      100
+    ],
+    "asset_return_raw_shape": [
+      126,
+      100
+    ],
+    "aligned_dates": 126,
+    "aligned_symbols": 100,
+    "nonzero_weight_cells": 12500,
+    "valid_asset_return_cells": 12500,
+    "tradable_true_cells": 12500
+  }
+}

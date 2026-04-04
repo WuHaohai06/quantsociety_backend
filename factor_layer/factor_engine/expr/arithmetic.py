@@ -64,6 +64,14 @@ class Log(UnaryExpr):
 
 
 @dataclass(frozen=True)
+class Exp(UnaryExpr):
+    """自然指数 e^x。
+
+    **华泰对照**：《GPT 因子工厂 2.0》图表 9/11 元素算子 ``Exp(X)``（来源：华泰研究）。
+    """
+
+
+@dataclass(frozen=True)
 class Sqrt(UnaryExpr):
     """非负平方根。"""
 

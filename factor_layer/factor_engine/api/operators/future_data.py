@@ -1,6 +1,9 @@
 """远期数据层算子 API：仅 **Expr 构建 + IR**，Pandas 执行统一 ``NotImplementedError``（见 ``STUB_IR_OPS``）。
 
 这些工厂用于在 **没有 LOB / PiT / NLP 管道** 时仍能在 DSL 中出现名字；**不要**当成已有数据就能跑出因子值。
+
+华泰《GPT 因子工厂 2.0》图表 9 基本面类命名与 **stub** 的对应见各函数 docstring 及
+``docs/huatai_factor_factory_operator_catalog.md``。
 """
 
 from __future__ import annotations
@@ -126,12 +129,18 @@ def fundamental_ttm_stub(child: Expr) -> Expr:
 
 
 def fundamental_yoy_stub(child: Expr) -> Expr:
-    """同比占位。"""
+    """同比占位。
+
+    **华泰对照**：图表 9 元素算子 ``YOY(X)``（矩阵同比）；本处为 PiT/财报管线 stub，非矩阵内核。
+    """
     return FundamentalStub(op="fundamental_yoy_stub", child=ensure_expr(child))
 
 
 def fundamental_qoq_stub(child: Expr) -> Expr:
-    """环比占位。"""
+    """环比占位。
+
+    **华泰对照**：图表 9 ``QOQ(X)``；同上。
+    """
     return FundamentalStub(op="fundamental_qoq_stub", child=ensure_expr(child))
 
 

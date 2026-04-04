@@ -27,9 +27,25 @@
 
 1. 校验并清洗输入长表。
 2. 将持仓和价格转换为按日期 x 标的组织的宽表。
-3. 计算逐日资产收益和组合收益。
-4. 计算换手、交易成本、净值、回撤、胜率、风险收益指标等。
-5. 输出标准化产物，供后续分析或准入评估使用。
+3. 按可配置的收益窗口计算逐资产未来收益。
+4. 根据可交易约束过滤停牌、涨跌停或其他不可成交资产。
+5. 计算组合收益、换手、交易成本、净值、回撤、胜率、风险收益指标等。
+6. 输出标准化产物，供后续分析或准入评估使用。
+
+更具体地说，这个类承担的是“把策略权重变成标准化回测产物”的工作，适合放在策略研究和策略准入之间做统一中间层。它除了计算最基础的收益曲线，还会同步产出：
+
+- 逐日收益明细：毛收益、净收益、换手、交易成本、暴露、覆盖率、净值曲线。
+- 指标明细：收益、波动、回撤、胜率、尾部风险、交易行为、数据有效性等。
+- 摘要结果：适合快速浏览或入库的单行 summary。
+- 元数据：本次运行的参数配置、输入规模、面板 shape、有效数据量等。
+
+这个类有几个比较关键的设计点：
+
+- 支持从长表输入自动透视成宽表，不要求你提前自己整理矩阵。
+- 默认会把信号权重整体下移 1 期，避免未来函数。
+- 收益窗口不是写死的，可以通过 `return_window` 控制，例如 1 日、5 日、10 日未来收益。
+- 可以传入额外的 `tradable_df` 作为交易约束，屏蔽停牌、涨跌停、不可交易等资产。
+- 可以选择性传入基准收益序列，自动计算超额收益、跟踪误差、信息比率、alpha/beta。
 
 ### 输入数据格式
 
@@ -76,16 +92,42 @@
 - `beta`
 - `alpha`
 
+#### tradable_df
+
+可选，用于描述每个交易日、每个标的是否允许交易。默认需要以下列：
+
+- `trade_date`
+- `symbol`
+- `is_tradable`
+
+这个表适合承载你提到的交易限制信息，例如：
+
+- 停牌
+- 涨停买不进
+- 跌停卖不出
+- 风险警示或临时不可交易状态
+
+只要你能把这些约束最终整理成布尔列 `is_tradable`，这个类就会在收益计算前先把对应单元格过滤掉。
+
+如果不传 `tradable_df`，类内部会退化为基于价格是否足够计算未来收益来判断“默认可交易”。这能处理缺失价格，但不能替代真实的停牌、涨跌停约束。
+
 ### 收益计算逻辑
 
-类内部采用 next-day return 逻辑：
+类内部采用“未来 `return_window` 期收益”逻辑：
 
-- 资产收益：`asset_return_t = close_{t+1} / close_t - 1`
-- 组合毛收益：`portfolio_return_t = sum_i(weight_{t,i} * asset_return_{t,i})`
+- 资产收益：`asset_return_t = close_{t+return_window} / close_t - 1`
+- 为避免未来函数，输入权重宽表会先整体下移 1 行，即 `signal_weight_t -> execution_weight_{t+1}`
+- 组合毛收益：`portfolio_return_t = sum_i(execution_weight_{t,i} * asset_return_{t,i})`
+
+因此：
+
+- 当 `return_window=1` 时，表示计算下一期收益，也就是最常见的 next-day return。
+- 当 `return_window=5` 时，表示计算未来 5 期累计收益。
+- 只要价格表中未来窗口对应的价格缺失，该资产该期收益就会被标记为无效。
 
 交易成本按换手估算：
 
-- `turnover_t = sum_i(abs(weight_{t,i} - weight_{t-1,i}))`
+- `turnover_t = sum_i(abs(execution_weight_{t,i} - execution_weight_{t-1,i}))`
 - `trading_cost_t = turnover_t * (fee_rate + slippage_rate)`
 - `net_return_t = gross_return_t - trading_cost_t`
 
@@ -99,18 +141,30 @@
 
 常用参数如下：
 
-- `annualization=252`：年化因子。
+- 收益与成本参数：
+- `annualization=252`：年化因子，用于把日频收益和波动率换算成年化指标。
+- `return_window=1`：未来收益窗口长度，决定资产收益按多少期之后的价格计算。
 - `fee_rate=0.0003`：手续费率。
 - `slippage_rate=0.0002`：滑点率。
-- `date_col="trade_date"`：日期列名。
-- `symbol_col="symbol"`：标的列名。
-- `weight_col="weight"`：权重列名。
+- 列名映射参数：
+- `date_col="trade_date"`：持仓和行情中的日期列名。
+- `symbol_col="symbol"`：持仓和行情中的标的列名。
+- `weight_col="weight"`：持仓权重列名。
 - `price_col="close"`：价格列名。
+- 可交易约束参数：
+- `tradable_df=None`：可选的交易约束长表，用于标记每个日期、每个标的是否可交易。
+- `tradable_date_col="trade_date"`：可交易表中的日期列名。
+- `tradable_symbol_col="symbol"`：可交易表中的标的列名。
+- `tradable_flag_col="is_tradable"`：可交易布尔标记列名。
+- 输出与归档参数：
 - `output_root="./results"`：结果输出根目录。
-- `strategy_name="default_strategy"`：策略名称。
+- `strategy_name="default_strategy"`：策略名称，对应产物目录的策略层。
+- 基准相关参数：
 - `benchmark_df=None`：可选基准收益序列。
 - `benchmark_date_col="trade_date"`：基准日期列名。
 - `benchmark_return_col="benchmark_return"`：基准收益列名。
+
+如果你的数据里已经有涨跌停、停牌、是否可成交等信息，推荐在进入回测前先整理成 `tradable_df` 再传给这个类；这样生成的收益、换手和覆盖率都会更接近真实可执行结果。
 
 ### 对外接口
 
@@ -141,6 +195,24 @@
 ├── summary.csv
 └── metadata.json
 ```
+
+这里的产物目录是按“策略层 + 运行层”组织的：
+
+- `output_root`：所有回测结果的总目录。
+- `strategy_name`：策略级目录，用来归档同一个策略的多次回测结果。
+- `run_name_or_timestamp`：单次运行目录，用来区分同一策略在不同参数、不同样本区间、不同时间下的具体一次回测。
+
+例如：
+
+```text
+./results/
+└── demo_strategy/
+    ├── demo_run/
+    ├── demo_run_v2/
+    └── 20260403_153000/
+```
+
+这样设计的目的是避免不同回测批次互相覆盖，并且方便对同一策略做多版本横向比较。
 
 #### returns.csv
 
@@ -272,6 +344,14 @@ print(result["output_dir"])
 print(result["summary_df"])
 ```
 
+如果上面的示例参数不变，那么产物会输出到：
+
+```text
+./results/demo_strategy/demo_run/
+```
+
+其中 `demo_strategy` 是策略名，`demo_run` 是本次运行名。
+
 ### 适用场景
 
 - 因子选股后的权重回测
@@ -324,6 +404,22 @@ print(result["summary_df"])
 #### `evaluate(artifact_dir)`
 
 读取产物并输出评估结果。
+
+这里的 `artifact_dir` 应该传“某一次具体回测运行目录”，而不是只传策略目录。
+
+正确示例：
+
+```python
+evaluator.evaluate("./results/demo_strategy/demo_run")
+```
+
+因为评估器会直接在这个目录下查找：
+
+- `metrics.csv`
+- `summary.csv`
+- `metadata.json`
+
+这些文件都位于单次 run 目录中，而不是 `./results/demo_strategy/` 这种策略根目录中。
 
 返回字典包括：
 

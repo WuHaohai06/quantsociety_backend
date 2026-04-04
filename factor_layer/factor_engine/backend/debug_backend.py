@@ -15,6 +15,10 @@ class DebugBackend(Backend):
 
     def _render(self, node: PlanNode, depth: int = 0) -> str:
         """深度优先打印子树。"""
+        if node.op == "plan_ref":
+            sid = node.attrs.get("sid", "")
+            preview = (sid[:48] + "…") if len(sid) > 48 else sid
+            return "  " * depth + f"plan_ref sid={preview!r}"
         lines = ["  " * depth + f"{node.op} {node.attrs}"]
         for child in node.inputs:
             lines.append(self._render(child, depth + 1))

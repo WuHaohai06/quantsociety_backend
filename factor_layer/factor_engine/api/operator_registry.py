@@ -4,6 +4,9 @@
 - ``build_dsl_allowlist()``：供 ``dsl_parser`` 使用，键为 DSL 里允许的函数名 → 返回 ``Expr`` 的可调用对象。
 - 因 ``ast.parse`` 限制，逻辑函数须用 ``and_`` / ``or_`` / ``not_``，不能写成 ``and`` 调用。
 - ``STUB_IR_OPS``：这些 IR 算子名在 Pandas 后端仅注册占位，执行会 ``NotImplementedError``。
+
+华泰《GPT 因子工厂 2.0》对照见 ``docs/huatai_factor_factory_operator_catalog.md``；
+蛇形 DSL 名与 **来源注释** 分布在各 ``api/operators`` / ``expr`` 模块，不注册第二套 PascalCase 函数名。
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from typing import Any, Callable
 from api.columns import col
 from expr.alternative import ALTERNATIVE_STUB_OPS
 from expr.fundamental import FUNDAMENTAL_STUB_OPS
+from expr.intraday import INTRADAY_STUB_OPS
 from expr.microstructure import MICROSTRUCTURE_STUB_OPS
 
 
@@ -34,6 +38,7 @@ class BrainCategory(str, Enum):
     MICROSTRUCTURE = "microstructure"
     FUNDAMENTAL = "fundamental"
     ALTERNATIVE = "alternative"
+    INTRADAY = "intraday"
 
 
 # 以下 op 字符串在 PandasBackend 中走统一 stub，不实现具体计算。
@@ -41,6 +46,7 @@ STUB_IR_OPS: frozenset[str] = frozenset({"vec_avg", "vec_sum"}).union(
     FUNDAMENTAL_STUB_OPS,
     ALTERNATIVE_STUB_OPS,
     MICROSTRUCTURE_STUB_OPS,
+    INTRADAY_STUB_OPS,
 )
 
 
@@ -49,6 +55,7 @@ def build_dsl_allowlist() -> dict[str, Callable[..., Any]]:
     from api.operators import arithmetic as ar
     from api.operators import cleaning as cl
     from api.operators import future_data as fd
+    from api.operators import intraday as iday
     from api.operators import context as cx
     from api.operators import cs as cs_ops
     from api.operators import group as gr
@@ -64,12 +71,16 @@ def build_dsl_allowlist() -> dict[str, Callable[..., Any]]:
             FUNDAMENTAL_STUB_OPS | ALTERNATIVE_STUB_OPS | MICROSTRUCTURE_STUB_OPS
         )
     }
+    _intraday_stub_allowlist = {
+        name: getattr(iday, name) for name in sorted(INTRADAY_STUB_OPS)
+    }
 
     return {
         "col": col,
         # Arithmetic
         "abs": ar.abs_,
         "log": ar.log,
+        "exp": ar.exp,
         "sqrt": ar.sqrt,
         "sin": ar.sin_,
         "cos": ar.cos_,
@@ -199,4 +210,5 @@ def build_dsl_allowlist() -> dict[str, Callable[..., Any]]:
         "orthogonalize": cx.orthogonalize,
         "change_instrument": cx.change_instrument,
         **_future_stub_allowlist,
+        **_intraday_stub_allowlist,
     }

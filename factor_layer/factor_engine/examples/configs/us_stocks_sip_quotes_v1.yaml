@@ -6,10 +6,12 @@ factor:
   description: 报价数据 - bid/ask 比值截面标准化，反映相对买卖价差（值越高买卖价差越小，流动性越好）
 
 data_source:
-  type: cleaned_parquet
-  root: /home/yluel/share/projects/massive_parquet/cleaned_massive_data/us_stocks_sip/quotes_v1
+  type: multi_parquet
+  root: /home/yluel/share/projects/massive_parquet/us_stocks_sip/quotes_v1
+  timestamp_col: sip_timestamp
+  instrument_col: ticker
   max_files: 2
-  # cleaned_parquet 默认使用 align_time / ticker
+  timestamp_unit: "ns"
   # start_date: "2003-01-01"   # 可选：限定时间范围左端（行级过滤）
   # end_date:   "2003-12-31"   # 可选：限定时间范围右端（行级过滤）
 
@@ -18,8 +20,3 @@ backend:
 
 engine:
   enable_cache: true
-
-materialization:
-  lake_root: /tmp/factor_engine_examples_lake
-  factor_id: quotes_zscore_bid_ask_spread_v1
-  # author: your_name

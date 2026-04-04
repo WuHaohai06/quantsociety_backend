@@ -4,6 +4,23 @@
 
 ---
 
+## 第 30 版更改-shw
+
+**内容**：为 **根目录与各包 `README.md`** 统一增加 **「协作者速览（约 5 分钟）」** 文首小节（与 **`backtest/README.md`** 已有 **「新人 5 分钟上手」** 同思路），便于协作者快速理解 **该目录职责、上下游边界、从哪读起**；**[`docs/README.md`](README.md)** 导航句已注明这一约定。
+
+---
+
+## 第 29 版更改-shw
+
+**内容**：**多资产回测文档与实现对齐**，便于协作者理解 **执行层 → 滞后 → 收益/成本** 与 **`FACTOR_BACKTEST_EXECUTION_ENGINE`** 语义。
+
+- **[`backtest/README.md`](../../../backtest_layer/single_asset_backtest/README.md)**：文首增加 **「给协作者」** 摘要；**§4.5 / §4.6 / §8–§9 / §13–§14** 与 [`runner.py`](../../../backtest_layer/single_asset_backtest/runner.py) 中 **`run_multi_asset_backtest`**、**`_multi_asset_fingerprint(feeds, executed_weights)`** 一致；修正 **§9** 步骤顺序（先 **`asset_return` + 执行层**，再 **`shift`** 与 **`gross`/`net`**）。
+- **[`docs/adr_backtest_target_position.md`](adr_backtest_target_position.md)**：重写 **§13** 多资产前视段落；新增 **§14**（执行输出、指纹列、**requested/resolved**）。
+- **[`README.md`](../README.md)**：多资产 **`portfolio_execution_engine`** 说明与 **第 29 版** 摘要；ADR 索引补充 **§14**。
+- **[`runtime/README.md`](../runtime/README.md)**：`perf_config` 小节补充 **`FACTOR_BACKTEST_EXECUTION_ENGINE`**。
+
+---
+
 ## 第 1 版更改-shw
 
 **内容**：确立算子分类与目录约定，不新增与现有 `expr` 重复的模块名。
@@ -206,4 +223,101 @@
 
 ---
 
-*若后续继续迭代算子实现，请在本文件追加「第 20 版更改-shw」及之后条目。*
+## 第 20 版更改-shw
+
+**内容**：**华泰 GPT 因子工厂 2.0** 算子（研报图表 9/11）与引擎 **WQ 风格 DSL** 的 **对照目录 + 去重 ADR**；不新增重复 DSL 名；分钟频 `Agg_*` / `Agg_Explode_*` 保持「无对应 / 远期数据层」说明。
+
+- **新增** [`docs/huatai_factor_factory_operator_catalog.md`](huatai_factor_factory_operator_catalog.md)：华泰名 → 规范名 / 组合式、映射类型（等价/近似/仅 stub/无对应）、频率与数据契约、来源引用。
+- **新增** [`docs/adr_huatai_factor_factory_operators.md`](adr_huatai_factor_factory_operators.md)：命名策略、去重判定顺序、第二阶段可选 intraday stub 的边界。
+- **更新** [`docs/operators_roadmap.md`](operators_roadmap.md)：研究主题表一行 + 相关文档链接。
+- **更新** [`docs/factor_engine_llm_prompt.md`](factor_engine_llm_prompt.md) / [`.txt`](factor_engine_llm_prompt.txt)：第 20 版 NOTE（华泰名须经 catalog 映射）。
+- **更新** [`README.md`](../README.md)：文档索引、第 20 版摘要、`docs/` 结构树。
+
+---
+
+## 第 21 版更改-shw
+
+**内容**：华泰《GPT 因子工厂 2.0》对照 **落地到 Python**：新增机器可读映射模块与单测；**不**向 DSL 白名单增加第二套华泰函数名。
+
+- **新增** [`api/htsc_factor_factory_reference.py`](../api/htsc_factor_factory_reference.py)：`HtscOperatorRef`、图表 9/10/11 结构化条目、``canonical_allowlist_keys_for_validation()``（供测试）。
+- **新增** [`tests/test_htsc_factor_factory_reference.py`](../tests/test_htsc_factor_factory_reference.py)：等价映射键须存在于 `build_dsl_allowlist()`。
+- **更新** [`api/operator_registry.py`](../api/operator_registry.py)、[`expr/fundamental.py`](../expr/fundamental.py)、[`api/operators/future_data.py`](../api/operators/future_data.py)：模块说明互指华泰文档与上述模块。
+- **更新** [`docs/huatai_factor_factory_operator_catalog.md`](huatai_factor_factory_operator_catalog.md)：维护节说明与 Python 同步。
+- **更新** [`docs/factor_engine_llm_prompt.md`](factor_engine_llm_prompt.md) / [`.txt`](factor_engine_llm_prompt.txt)：第 21 版 NOTE。
+- **更新** [`README.md`](../README.md)：第 21 版摘要、项目结构树。
+
+---
+
+## 第 22 版更改-shw
+
+**内容**：华泰算子 **融入** 现有 `api/operators` / `expr`（**华泰对照** docstring）；**删除** [`api/htsc_factor_factory_reference.py`](../api/htsc_factor_factory_reference.py) 与 [`tests/test_htsc_factor_factory_reference.py`](../tests/test_htsc_factor_factory_reference.py)；新增 **`exp`**（`Exp` Expr，华泰图表 9/11 `Exp(X)`）；新增 **`INTRADAY_STUB_OPS`** / [`expr/intraday.py`](../expr/intraday.py) / [`api/operators/intraday.py`](../api/operators/intraday.py)（华泰图表 11 `Agg_*` / `Agg_Explode_*` / `Tp_Sample` 蛇形 stub）；[`BrainCategory.INTRADAY`](../api/operator_registry.py)；`ir/analyzer` / `PolarsBackend` 扩展；测试 [`tests/test_intraday_stub.py`](../tests/test_intraday_stub.py)、算术 `test_exp`。
+
+- **更新** [`docs/huatai_factor_factory_operator_catalog.md`](huatai_factor_factory_operator_catalog.md)、[`adr_huatai_factor_factory_operators.md`](adr_huatai_factor_factory_operators.md)、[`README.md`](../README.md)、[`factor_engine_llm_prompt.md`](factor_engine_llm_prompt.md) / [`.txt`](factor_engine_llm_prompt.txt)。
+
+---
+
+## 第 23 版更改-shw
+
+**内容**：**向量化与执行路径增强**——多因子 **CSE**、可选 **Modin** / **Polars Lazy**、**Numba** 滑动均值可选路径、**perf** 环境变量与剖析/对比脚本；不改动 DSL 白名单语义。
+
+- **新增** [`planner/plan_hash.py`](../planner/plan_hash.py)、[`planner/cse.py`](../planner/cse.py)：结构化哈希与 `apply_cse`；[`runtime/engine.py`](../runtime/engine.py)：`compile_many` / `_dag_from_factors` / `run_many` / `run_many_parallel`。
+- **新增** [`backend/pandas_compat.py`](../backend/pandas_compat.py)：`FACTOR_ENGINE_USE_MODIN` 与 **`build_backend("pandas_modin")`**；[`backend/factory.py`](../backend/factory.py) 别名 **`pandas_modin`**、**`polars_lazy`**。
+- **扩展** [`backend/polars_backend.py`](../backend/polars_backend.py)：更多算子与 **`PolarsBackend(use_lazy=True)`** / **`FACTOR_ENGINE_POLARS_LAZY`**。
+- **新增** [`backend/numba_kernels.py`](../backend/numba_kernels.py)（可选）、[`runtime/perf_config.py`](../runtime/perf_config.py)；脚本 [`scripts/profile_pandas_backend.py`](../scripts/profile_pandas_backend.py)、[`scripts/bench_pandas_vs_modin.py`](../scripts/bench_pandas_vs_modin.py)。
+- **依赖** [`pyproject.toml`](../pyproject.toml)：`[modin]` optional extra；pytest marker **`modin`**。
+- **测试** [`tests/test_cse_run_many.py`](../tests/test_cse_run_many.py)、[`tests/test_pandas_compat.py`](../tests/test_pandas_compat.py)；**更新** [`README.md`](../README.md) 第 23 版摘要与项目结构树。
+
+---
+
+## 第 24 版更改-shw
+
+**内容**：新增 **Backtrader 单标回测子系统**，冻结研究员 C→D 的 `target_position` 对接协议（权重 `[-1,1]`、缺失 `ffill`），并统一回测输出 schema。
+
+- **新增目录** [`backtest/`](../../../backtest_layer/single_asset_backtest/)：
+  - [`config.py`](../../../backtest_layer/single_asset_backtest/config.py)：`BacktestConfig`（`initial_cash` / `commission` / `slippage_perc` / `rebalance_threshold` / `enforce_target_bounds`）。
+  - [`contracts.py`](../../../backtest_layer/single_asset_backtest/contracts.py)：`target_position` 校验与标准化、时间索引约束、`ffill` 与边界处理。
+  - [`strategy.py`](../../../backtest_layer/single_asset_backtest/strategy.py)：消费目标仓位并调仓的策略轨迹记录。
+  - [`runner.py`](../../../backtest_layer/single_asset_backtest/runner.py)：`run_single_asset_backtest(...)` 执行入口（Backtrader `order_target_percent`）。
+  - [`report.py`](../../../backtest_layer/single_asset_backtest/report.py)：统一输出 `returns` / `metrics` / `summary`。
+  - [`io.py`](../../../backtest_layer/single_asset_backtest/io.py)：CSV/Parquet 输入加载与规范化。
+- **依赖**：[`pyproject.toml`](../pyproject.toml) 新增 optional extra **`backtest = ["backtrader>=1.9.78.123"]`**。
+- **示例**：新增 [`examples/backtest_single_asset.py`](../../../backtest_layer/examples/backtest_single_asset.py)（现位于 monorepo `backtest_layer/examples/`）。
+- **测试**：新增 [`tests/test_backtest_contracts.py`](../../../backtest_layer/tests/test_backtest_contracts.py)、[`tests/test_backtest_single_asset.py`](../../../backtest_layer/tests/test_backtest_single_asset.py)、[`tests/test_backtest_report_schema.py`](../../../backtest_layer/tests/test_backtest_report_schema.py)（现位于 monorepo `backtest_layer/tests/`）。
+- **ADR**：新增 [`docs/adr_backtest_target_position.md`](adr_backtest_target_position.md) 冻结接口口径。
+- **文档**：[`README.md`](../README.md) 增补第 24 版摘要、可选依赖 `backtest` 说明与结构树条目。
+
+
+## 第 25 版更改-shw
+
+**内容**：回测模块从 MVP 升级为 **D-3 策略可追踪 + 分层指标体系**，保持 D-1/D-2 协议兼容。
+
+- **D-3 策略入库**：新增 [`backtest/strategy_registry.py`](../../../backtest_layer/single_asset_backtest/strategy_registry.py)（`StrategySpec` / `StrategyRegistry`）与 [`backtest/strategy_library.py`](../../../backtest_layer/single_asset_backtest/strategy_library.py)（内置 `target_position@1.0`）。
+- **执行入口扩展**：[`backtest/runner.py`](../../../backtest_layer/single_asset_backtest/runner.py) 支持 `strategy_name` / `strategy_version` / `strategy_params`；回测摘要新增 `strategy_name`、`strategy_version`、`strategy_params`、`strategy_instance_id`。
+- **指标工业化**：新增 [`backtest/metrics.py`](../../../backtest_layer/single_asset_backtest/metrics.py)，[`backtest/config.py`](../../../backtest_layer/single_asset_backtest/config.py) 增加 `metrics_profile`（`core`/`standard`/`industrial`）；[`backtest/report.py`](../../../backtest_layer/single_asset_backtest/report.py) 接入分层指标计算。
+- **对外导出**：[`backtest/__init__.py`](../../../backtest_layer/single_asset_backtest/__init__.py) 导出 `StrategyRegistry` / `StrategySpec` / `build_strategy_registry`。
+- **测试**：新增 [`tests/test_backtest_strategy_registry.py`](../../../backtest_layer/tests/test_backtest_strategy_registry.py)、[`tests/test_backtest_metrics_extended.py`](../../../backtest_layer/tests/test_backtest_metrics_extended.py)；更新 [`tests/test_backtest_single_asset.py`](../../../backtest_layer/tests/test_backtest_single_asset.py)、[`tests/test_backtest_report_schema.py`](../../../backtest_layer/tests/test_backtest_report_schema.py)。
+- **示例/文档**：更新 [`examples/backtest_single_asset.py`](../../../backtest_layer/examples/backtest_single_asset.py)、[`README.md`](../README.md)、[`docs/adr_backtest_target_position.md`](adr_backtest_target_position.md)。
+
+## 第 26 版更改-shw
+
+**内容**：回测 **防前视配置**、**指纹语义** 与 **README / ADR** 对齐。
+
+- **配置**：[`backtest/config.py`](../../../backtest_layer/single_asset_backtest/config.py) 新增 `target_lag_bars`（单资产，默认 `0`）、`portfolio_weight_lag_bars`（多资产，默认 `1`，禁止 `0`）。
+- **执行**：[`backtest/runner.py`](../../../backtest_layer/single_asset_backtest/runner.py) 单资产在对齐目标后应用 `shift(target_lag_bars)`；多资产用可配置滞后替代写死的 `shift(1)`；`data_fingerprint` 与滞后后的有效输入一致。
+- **ADR**：[`docs/adr_backtest_target_position.md`](adr_backtest_target_position.md) 新增 **§13**（信号时间语义、基准与 ffill）。
+- **文档**：[`README.md`](../README.md) 增补第 26 版摘要、回测章节（ADR 链接、`target_lag_bars` / `portfolio_weight_lag_bars`、`data_fingerprint` 说明、`PYTHONPATH` + 回测 pytest 示例）。
+- **测试**：更新 [`tests/test_backtest_single_asset.py`](../../../backtest_layer/tests/test_backtest_single_asset.py)、[`tests/test_backtest_multi_asset.py`](../../../backtest_layer/tests/test_backtest_multi_asset.py)。
+
+---
+
+## 第 27 版更改-shw
+
+**内容**：为各顶层包目录补充 **`README.md`**（`api/`、`api/operators/`、`backend/`、`expr/`、`ir/`、`planner/`、`runtime/`、`storage/`、`scripts/`、`tests/`、`examples/`、`examples/configs/`、`docs/`），并在 [`docs/README.md`](README.md) 建立文档索引；根目录 [`README.md`](../README.md) 文档索引增加指向。
+
+## 第 28 版更改-shw
+
+**内容**：**大幅扩写**各包 `README.md`（增加架构图、文件逐项说明、数据流、环境变量/契约、测试与延伸阅读）；新增 [`docs/_refs/README.md`](_refs/README.md)；[`backtest/README.md`](../../../backtest_layer/single_asset_backtest/README.md) 增加 **§0**（与主因子链路关系 + 章节导航）。根目录 [`README.md`](../README.md) 增加 **第 28 版** 摘要。
+
+---
+
+*若后续继续迭代算子实现，请在本文件追加「第 31 版更改-shw」及之后条目。*

@@ -47,6 +47,10 @@ from expr.ts import (
 
 
 def ts_mean(x: Expr, d: int, min_periods: int | None = None) -> Expr:
+    """过去 ``d`` 根 **bar** 上均值（每标的内滚动）。
+
+    **华泰对照**：图表 9 ``TS_Mean`` 在研报中为「过去 d **季度**」；本引擎为 bar 轴，非自动季频。
+    """
     return TsMean(child=ensure_expr(x), window=d, min_periods=min_periods)
 
 
@@ -67,10 +71,18 @@ def ts_min(x: Expr, d: int, min_periods: int | None = None) -> Expr:
 
 
 def ts_delay(x: Expr, d: int) -> Expr:
+    """滞后 ``d`` 根 bar。
+
+    **华泰对照**：图表 9 ``Delay(X,d)`` 为「过去第 d **季度**」；本引擎为 bar 滞后。
+    """
     return TsDelay(child=ensure_expr(x), d=d)
 
 
 def delay(x: Expr, periods: int) -> Expr:
+    """``delay`` 别名（WQ 兼容）。
+
+    **华泰对照**：同 ``ts_delay`` 与图表 9 ``Delay`` 之差异说明。
+    """
     return Delay(child=ensure_expr(x), periods=periods)
 
 

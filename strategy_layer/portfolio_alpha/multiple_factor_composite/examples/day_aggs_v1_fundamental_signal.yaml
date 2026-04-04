@@ -1,0 +1,56 @@
+meta:
+  signal_id: day_aggs_v1_fundamental_signal
+  version: v1
+  description: 基于 day_aggs_v1 基本面因子落盘结果的基础组合信号示例
+
+source:
+  factor_lake_root: /home/yluel/share/projects/factor_data
+  start: 2016-01-01
+  end: 2025-12-31 23:59:59
+  align_method: outer
+
+factors:
+  - factor_id: day_aggs_v1_fundamental_asset_scale_rank_2016_2025_v1
+    alias: asset_scale
+    group: scale
+  - factor_id: day_aggs_v1_fundamental_book_strength_rank_2016_2025_v1
+    alias: book_strength
+    group: balance_sheet
+  - factor_id: day_aggs_v1_fundamental_cash_reinvestment_rank_2016_2025_v1
+    alias: cash_reinvestment
+    group: quality
+  - factor_id: day_aggs_v1_fundamental_float_tightness_rank_2016_2025_v1
+    alias: float_tightness
+    group: float
+
+preprocess:
+  winsorize:
+    enabled: true
+    method: quantile
+    lower: 0.01
+    upper: 0.99
+  standardize:
+    method: zscore
+  fillna:
+    method: keep
+
+neutralization:
+  steps: []
+
+orthogonalization:
+  steps:
+    - method: sequential
+      factors: [asset_scale, book_strength, cash_reinvestment, float_tightness]
+      order: [asset_scale, book_strength, cash_reinvestment, float_tightness]
+      renormalize: true
+
+composition:
+  weighting:
+    method: equal
+  final_transform: zscore
+  long_top_k: 50
+  score_column: composite_score
+
+output:
+  root: /home/yluel/share/projects/quantsociety_backend_project/strategy_layer/multiple_factor_composite/runs/day_aggs_v1_fundamental_signal_v1
+  signal_filename: composite_signal.parquet

@@ -6,10 +6,11 @@ factor:
   description: 利润表 - 营业收入截面标准化，衡量相对营收规模
 
 data_source:
-  type: cleaned_parquet
-  root: /home/yluel/share/projects/massive_parquet/cleaned_massive_data/fundamentals/income_statement
+  type: multi_parquet
+  root: /home/yluel/share/projects/massive_parquet/fundamentals/income_statement
+  timestamp_col: period_end
+  instrument_col: tickers
   max_files: 3
-  # cleaned_parquet 默认使用 align_time / ticker
   # start_date: "2010-01-01"   # 可选：限定时间范围左端（行级过滤）
   # end_date:   "2011-12-31"   # 可选：限定时间范围右端（行级过滤）
 
@@ -18,8 +19,3 @@ backend:
 
 engine:
   enable_cache: true
-
-materialization:
-  lake_root: /tmp/factor_engine_examples_lake
-  factor_id: income_statement_zscore_revenue_v1
-  # author: your_name

@@ -6,10 +6,11 @@ factor:
   description: 融券成交量 - 做空成交比例截面标准化，正值代表做空意愿高于均值
 
 data_source:
-  type: cleaned_parquet
-  root: /home/yluel/share/projects/massive_parquet/cleaned_massive_data/fundamentals/short_volume
+  type: multi_parquet
+  root: /home/yluel/share/projects/massive_parquet/fundamentals/short_volume
+  timestamp_col: date
+  instrument_col: ticker
   max_files: 3
-  # cleaned_parquet 默认使用 align_time / ticker
   # start_date: "2024-01-01"   # 可选：限定时间范围左端（行级过滤）
   # end_date:   "2024-12-31"   # 可选：限定时间范围右端（行级过滤）
 
@@ -18,8 +19,3 @@ backend:
 
 engine:
   enable_cache: true
-
-materialization:
-  lake_root: /tmp/factor_engine_examples_lake
-  factor_id: short_volume_zscore_ratio_v1
-  # author: your_name

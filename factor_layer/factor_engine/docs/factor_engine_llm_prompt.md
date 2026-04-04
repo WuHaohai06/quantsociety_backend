@@ -5,6 +5,12 @@
 > **第 7 版更改-shw**：新增 **清洗 / 技术指标 / 上下文 / group_*** 等可执行算子及 **子树缓存**；路线图见 [`operators_roadmap.md`](operators_roadmap.md)；`change_instrument` 基准列约定见 [`adr_context_benchmark.md`](adr_context_benchmark.md)。下文算子列表若有遗漏，以注册表 `build_dsl_allowlist()` 为准。
 >
 > **第 19 版更改-shw**：技术指标第三批（`ts_bop`/`ts_mom`/`ts_stochf`/`ts_trix`/`ts_adxr`/`ts_dx`/`ts_rocr`/`ts_rocr100`/`ts_linearreg_slope`/`ts_linearreg_angle`）；详见 [`changelog_shw.md`](changelog_shw.md)。
+>
+> **第 20 版更改-shw**：华泰研报《GPT 因子工厂 2.0》中的 PascalCase 算子名（如 `Agg_Explode_*`、`CS_Rank`、`TS_Mean`）**不是**本引擎合法 DSL 函数名。必须先对照 [`huatai_factor_factory_operator_catalog.md`](huatai_factor_factory_operator_catalog.md) 映射到蛇形规范名（`ts_mean`、`rank`、`group_rank`…）；分钟级 `Agg_*` / `Agg_Explode_*` 多数尚无对应实现，勿当作已实装。策略见 [`adr_huatai_factor_factory_operators.md`](adr_huatai_factor_factory_operators.md)。
+>
+> **第 21 版更改-shw**：（已由第 22 版替代）曾使用独立华泰对照 py。
+
+> **第 22 版更改-shw**：华泰映射写在各算子 **docstring**；分钟类为 `intraday_*_stub`（`expr/intraday.py`）；新增 `exp`；删除 `htsc_factor_factory_reference.py`。详见 [`changelog_shw.md`](changelog_shw.md)。
 
 You are an AI assistant helping to write factor definitions and configurations for a quantitative factor engine. Below is the complete specification of the system.
 
@@ -545,13 +551,13 @@ col("price") / delay(col("price"), 5)  # 5-period price momentum
 `bucket(...)`, `trade_when(trigger, alpha, exit_)`, `ts_step(d, anchor)`, `hump(x, hump=0.01)` — 语义见 `operators_semantics.md` 与 `adr_trade_when.md` / `adr_ts_step_hump.md`。
 
 **仍为占位（执行 `NotImplementedError`）**  
-**`vec_avg`, `vec_sum`**（需向量列契约，见路线图路径 B）；**远期数据层**：**76** 个 `*_stub`（基本面 `fundamental_*` / `days_since_*` / `analyst_*` / `insider_*` / `institutional_*`，另类 `alt_*`，微观 `micro_*` / `lob_ofi_stub` / `event_window_mask_stub` / `universe_reit_stub`），完整列表以代码 **`api.operator_registry.STUB_IR_OPS`** 与 `expr.fundamental.FUNDAMENTAL_STUB_OPS`、`expr.alternative.ALTERNATIVE_STUB_OPS`、`expr.microstructure.MICROSTRUCTURE_STUB_OPS` 为准；均无 Pandas 数值内核，仅供 DSL 预留名。
+**`vec_avg`, `vec_sum`**（需向量列契约，见路线图路径 B）；**远期数据层 + 分钟类**：约 **109** 个 `*_stub`（含 `intraday_*_stub`，华泰图表 11 语义），完整集合以 **`api.operator_registry.STUB_IR_OPS`** 与 `expr.fundamental.FUNDAMENTAL_STUB_OPS`、`expr.alternative.ALTERNATIVE_STUB_OPS`、`expr.microstructure.MICROSTRUCTURE_STUB_OPS`、`expr.intraday.INTRADAY_STUB_OPS` 为准；均无 Pandas 数值内核，仅供 DSL 预留名。
 
 ---
 
 ### 5.5 Arithmetic Operators
 
-**Supported**: `+`, `-`, `*`, `/`, `sin(x)`, `cos(x)`（DSL 函数名 `sin` / `cos`）
+**Supported**: `+`, `-`, `*`, `/`, `sin(x)`, `cos(x)`, `exp(x)`（DSL：`sin` / `cos` / `exp`；`exp` 对齐华泰图表 9/11 `Exp(X)`）
 
 **Broadcast Behavior**:
 - Series + Series → element-wise on matching index

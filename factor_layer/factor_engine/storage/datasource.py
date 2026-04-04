@@ -1,16 +1,13 @@
-from __future__ import annotations
+"""数据源抽象：按列名返回与引擎约定一致的 MultiIndex Series（timestamp × instrument）。"""
 
 from abc import ABC, abstractmethod
 from typing import Any
 
 
 class DataSource(ABC):
-    """因子引擎数据源契约。
-
-    `load_column()` 必须返回一个按 `(timestamp, instrument)` MultiIndex 排序的列数据。
-    当前 PandasBackend 只依赖这一层抽象，因此单数据源接入可以保持很薄。
-    """
+    """具体实现见 ``ParquetSource``、``KlineParquetSource`` 等。"""
 
     @abstractmethod
     def load_column(self, name: str) -> Any:
+        """加载名为 ``name`` 的一列时间序列面板数据。"""
         raise NotImplementedError

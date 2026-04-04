@@ -14,7 +14,10 @@ from .base import Expr
 
 @dataclass(frozen=True)
 class TsMean(Expr):
-    """滚动简单平均。"""
+    """滚动简单平均（每标的 ``window`` 根 bar）。
+
+    **华泰对照**：图表 9 ``TS_Mean`` 在研报中为「d **季度**」窗口；此处为 bar 窗口。
+    """
 
     child: Expr
     window: int
@@ -69,7 +72,10 @@ class TsMin(Expr):
 
 @dataclass(frozen=True)
 class TsDelay(Expr):
-    """滞后 d 根 bar：x(t-d)。"""
+    """滞后 d 根 bar：x(t-d)。
+
+    **华泰对照**：图表 9 ``Delay`` 为「第 d **季度**」；此处为 bar 轴。
+    """
 
     child: Expr
     d: int

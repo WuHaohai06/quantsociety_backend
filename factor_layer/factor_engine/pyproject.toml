@@ -15,8 +15,14 @@ pandas = ["pandas>=2.0", "pyarrow>=14.0", "scipy>=1.10"]
 accel = ["bottleneck>=1.3", "numba>=0.58"]
 talib = ["TA-Lib>=0.4.28"]
 polars = ["polars>=0.20"]
+# Modin 并行 pandas API（依赖 Ray 或 Dask；与 factor-engine 同进程时设 FACTOR_ENGINE_USE_MODIN=1 或 backend.type=pandas_modin）
+modin = ["modin>=0.28"]
 parallel = ["joblib>=1.3"]
+backtest = ["backtrader>=1.9.78.123"]
 dev = ["pytest>=8.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "modin: 需要安装 modin，默认 CI 不跑",
+]

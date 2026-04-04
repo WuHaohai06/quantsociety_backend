@@ -33,6 +33,8 @@ def test_parse_expr_new_operators_v7():
 def test_parse_expr_sin_cos_and_future_stubs():
     parse_expr('sin(col("x"))')
     parse_expr('cos(col("x"))')
+    parse_expr('exp(col("x"))')
+    parse_expr('intraday_explode_return_stub(col("x"))')
     parse_expr('lob_ofi_stub(col("x"))')
     parse_expr('fundamental_ttm_stub(col("x"))')
     parse_expr('fundamental_yoy_stub(col("x"))')

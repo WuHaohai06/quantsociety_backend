@@ -30,6 +30,7 @@ factor_layer/factor_agent/output/MinerU_markdown_*.md
 factor_layer/factor_agent/output/MinerU_markdown_*.yaml
 factor_layer/factor_indicators/evaluation_output/
 raw_data_layer/raw_data_fetching/download_results.csv
+strategy_layer/portfolio_alpha/multiple_factor_composite/runs/
 
 # User local workspace
 users_workspace/whh_workspace/

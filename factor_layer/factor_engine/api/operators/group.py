@@ -34,7 +34,10 @@ def group_neutralize(x: Expr, group: Expr) -> Expr:
 
 
 def group_rank(x: Expr, group: Expr) -> Expr:
-    """组内 [0,1] 分位排名。"""
+    """组内 [0,1] 分位排名。
+
+    **华泰对照**：图表 9 ``CS_Indus_Rank(X, indus_belong)`` → ``group`` 为行业/组 id 列（华泰证券）。
+    """
     return GroupRank(x=ensure_expr(x), group=ensure_expr(group))
 
 

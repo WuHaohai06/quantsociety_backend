@@ -11,6 +11,10 @@ from expr.cs import CsQuantile, Neutralize, Normalize, Rank, Scale, Winsorize, Z
 
 
 def rank(x: Expr, rate: int = 2) -> Expr:
+    """全截面分位秩。
+
+    **华泰对照**：《GPT 因子工厂 2.0》图表 9 ``CS_Rank(X)``（华泰证券）。
+    """
     return Rank(child=ensure_expr(x), rate=rate)
 
 

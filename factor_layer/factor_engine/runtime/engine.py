@@ -1,25 +1,31 @@
-"""运行时入口：``FactorEngine`` 负责 compile（Expr→IR→Plan）与 run（后端执行）。"""
+"""运行时入口：``FactorEngine`` 负责 compile（Expr→IR→Plan）与 run（后端执行）。
 
-from pathlib import Path
+合并说明：保留上游 ``factor_engine`` 的 CSE / ``run_many`` / ``PerfConfig``；保留本仓库的日志与因子物化（``materialize*``）。
+"""
+
+from __future__ import annotations
+
 import time
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any
 
 from api.dsl_parser import parse_factor
-from collections.abc import Sequence
-
 from api.factor import Factor
-from backend.factory import build_backend
 from backend.context import ExecutionContext
+from backend.factory import build_backend
+from ir.analyzer import AnalysisResult, Analyzer
+from logging_utils import get_logger
+from planner.cse import apply_cse
 from planner.dag import DAGPlan, FactorPlan
+from planner.logical_plan import PlanNode
 from planner.lowerer import Lowerer
 from planner.optimizer import Optimizer
 from runtime.config import load_config
+from runtime.perf_config import PerfConfig
 from storage.cache import CacheManager
 from storage.factory import build_data_source
 from storage.materializer import ParquetMaterializer
-from logging_utils import get_logger
-
-from ir.analyzer import Analyzer
-
 
 logger = get_logger("runtime.engine")
 
@@ -45,18 +51,55 @@ class FactorEngine:
         logger.info(
             "完成编译因子 '%s'，lookback=%s，耗时 %.2fs",
             factor.name,
-            analysis.lookback,
+            getattr(analysis, "lookback", None),
             time.perf_counter() - started_at,
         )
         return optimized_plan, analysis
 
-    def compile_many(self, factors: Sequence[Factor]) -> DAGPlan:
-        """多因子根计划列表（共享子式优化可后续做）。"""
-        roots: list[FactorPlan] = []
+    def _dag_from_factors(
+        self,
+        factors: Sequence[Factor],
+        *,
+        enable_cse: bool | None = None,
+        perf: PerfConfig | None = None,
+    ) -> tuple[DAGPlan, dict[str, AnalysisResult]]:
+        """编译多因子并可选 CSE；每个因子只 ``compile`` 一次。"""
+        perf = perf or PerfConfig.from_env()
+        if enable_cse is None:
+            enable_cse = perf.enable_cse
+        plans: list[PlanNode] = []
+        names: list[str] = []
+        analyses: dict[str, AnalysisResult] = {}
         for factor in factors:
-            plan, _ = self.compile(factor)
-            roots.append(FactorPlan(factor_name=factor.name, root=plan))
-        return DAGPlan(roots=roots)
+            plan, analysis = self.compile(factor)
+            plans.append(plan)
+            names.append(factor.name)
+            analyses[factor.name] = analysis
+        if enable_cse and len(plans) > 0:
+            new_plans, shared = apply_cse(plans)
+        else:
+            new_plans, shared = plans, {}
+        roots = [
+            FactorPlan(factor_name=n, root=r) for n, r in zip(names, new_plans, strict=True)
+        ]
+        return DAGPlan(roots=roots, shared_nodes=shared), analyses
+
+    def compile_many(
+        self,
+        factors: Sequence[Factor],
+        *,
+        enable_cse: bool | None = None,
+        perf: PerfConfig | None = None,
+    ) -> DAGPlan:
+        """多因子编译：可选 **公共子表达式消除（CSE）**，重复子树只保留一份于 ``shared_nodes``。
+
+        CSE 默认开启；可用环境变量 ``FACTOR_ENGINE_DISABLE_CSE=1`` 关闭，或传入
+        ``perf=PerfConfig.from_env()`` / ``enable_cse=False``。
+        """
+        dag, _ = self._dag_from_factors(
+            factors, enable_cse=enable_cse, perf=perf
+        )
+        return dag
 
     @classmethod
     def from_config(cls, config_path: str | Path):
@@ -104,7 +147,7 @@ class FactorEngine:
         description: str | None = None,
         expression: str | None = None,
     ):
-        """一键从配置文件执行因子并落盘。"""
+        """一键从配置文件执行因子并落盘到因子湖（Parquet）。"""
         logger.info("开始从配置物化因子: %s", config_path)
         engine, factor, config = cls.from_config(config_path)
         materialization = config.materialization
@@ -158,7 +201,7 @@ class FactorEngine:
         description: str | None = None,
         expression: str | None = None,
     ):
-        """执行单因子并将结果落盘到 factor lake。"""
+        """执行单因子并将结果落盘到 factor lake（Parquet）。"""
         logger.info("开始落盘因子 '%s'", factor.name)
         output = self.run(factor)
         materializer = ParquetMaterializer(lake_root=lake_root)
@@ -182,3 +225,75 @@ class FactorEngine:
             summary["rows_written"],
         )
         return output
+
+    def run_many(
+        self,
+        factors: Sequence[Factor],
+        *,
+        perf: PerfConfig | None = None,
+        enable_cse: bool | None = None,
+    ) -> dict[str, Any]:
+        """多因子求值：先执行 ``DAGPlan.shared_nodes``，再各因子根；含 ``plan_ref`` 时必须用此入口。"""
+        dag, analyses = self._dag_from_factors(
+            factors, enable_cse=enable_cse, perf=perf
+        )
+        perf = perf or PerfConfig.from_env()
+        ctx = ExecutionContext(
+            data_source=self.data_source,
+            cache=self.cache,
+            shared_result_cache={},
+            perf=perf,
+        )
+        if ctx.shared_result_cache is not None:
+            for sid, sub in dag.shared_nodes.items():
+                ctx.shared_result_cache[sid] = self.backend.execute(sub, ctx)
+        out: dict[str, Any] = {}
+        for fp in dag.roots:
+            out[fp.factor_name] = self.backend.execute(fp.root, ctx)
+        return {
+            "results": out,
+            "dag": dag,
+            "analyses": analyses,
+        }
+
+    def run_many_parallel(
+        self,
+        factors: Sequence[Factor],
+        *,
+        n_jobs: int | None = None,
+        perf: PerfConfig | None = None,
+        enable_cse: bool | None = None,
+    ) -> dict[str, Any]:
+        """在 ``run_many`` 基础上对**各因子根**并行求值（共享子式仍先串行算完）。"""
+        try:
+            from joblib import Parallel, delayed
+        except ImportError as exc:  # pragma: no cover
+            raise ImportError(
+                "run_many_parallel 需要 joblib：pip install 'factor-engine[parallel]'"
+            ) from exc
+
+        dag, analyses = self._dag_from_factors(
+            factors, enable_cse=enable_cse, perf=perf
+        )
+        perf = perf or PerfConfig.from_env()
+        workers = n_jobs if n_jobs is not None else perf.max_workers
+        ctx = ExecutionContext(
+            data_source=self.data_source,
+            cache=self.cache,
+            shared_result_cache={},
+            perf=perf,
+        )
+        if ctx.shared_result_cache is not None:
+            for sid, sub in dag.shared_nodes.items():
+                ctx.shared_result_cache[sid] = self.backend.execute(sub, ctx)
+
+        def _one(fp: FactorPlan):
+            res = self.backend.execute(fp.root, ctx)
+            return fp.factor_name, res
+
+        # 默认 threading：共享 ``ExecutionContext`` / 数据源，避免 loky 进程间 pickle 大对象失败
+        raw = Parallel(n_jobs=workers, backend="threading")(
+            delayed(_one)(fp) for fp in dag.roots
+        )
+        results = dict(raw)
+        return {"results": results, "dag": dag, "analyses": analyses}

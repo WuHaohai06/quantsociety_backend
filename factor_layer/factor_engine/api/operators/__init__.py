@@ -20,6 +20,7 @@ from api.operators.arithmetic import (
     cos_,
     densify,
     divide,
+    exp,
     inverse,
     log,
     max_,
@@ -34,8 +35,10 @@ from api.operators.arithmetic import (
     subtract,
 )
 from api.operators import future_data as _future_data
+from api.operators import intraday as _intraday
 from expr.alternative import ALTERNATIVE_STUB_OPS
 from expr.fundamental import FUNDAMENTAL_STUB_OPS
+from expr.intraday import INTRADAY_STUB_OPS
 from expr.microstructure import MICROSTRUCTURE_STUB_OPS
 
 _FUTURE_STUB_NAMES = sorted(
@@ -44,6 +47,10 @@ _FUTURE_STUB_NAMES = sorted(
 for _name in _FUTURE_STUB_NAMES:
     globals()[_name] = getattr(_future_data, _name)
 del _future_data, _name
+_INTRADAY_STUB_NAMES = sorted(INTRADAY_STUB_OPS)
+for _name in _INTRADAY_STUB_NAMES:
+    globals()[_name] = getattr(_intraday, _name)
+del _intraday, _name
 from api.operators.cs import (
     neutralize,
     normalize,
@@ -165,6 +172,7 @@ __all__ = [
     "days_from_last_change",
     "densify",
     "divide",
+    "exp",
     "eq",
     "ge",
     "group_backfill",
@@ -283,3 +291,5 @@ __all__ = [
 ]
 __all__.extend(_FUTURE_STUB_NAMES)
 del _FUTURE_STUB_NAMES
+__all__.extend(_INTRADAY_STUB_NAMES)
+del _INTRADAY_STUB_NAMES

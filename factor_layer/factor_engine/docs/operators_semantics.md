@@ -71,6 +71,7 @@
   - **基本面 / 事件 / 分析师等**：`expr.fundamental.FUNDAMENTAL_STUB_OPS`（如 `fundamental_yoy_stub`、`days_since_filing_stub`、`analyst_dispersion_stub` …）。
   - **另类 / ESG / 供应链等**：`expr.alternative.ALTERNATIVE_STUB_OPS`（如 `alt_sentiment_ema_stub`、`alt_esg_score_stub` …）。
   - **微观结构 / 事件掩码**：`expr.microstructure.MICROSTRUCTURE_STUB_OPS`（如 `lob_ofi_stub`、`micro_vpin_stub`、`event_window_mask_stub` …）。
+  - **分钟 / 日内序列（华泰《GPT 因子工厂 2.0》图表 11 类语义）**：`expr.intraday.INTRADAY_STUB_OPS`（如 `intraday_explode_return_stub`、`intraday_tp_sample_stub` …）；需分钟 OHLCV 或逐笔 schema，与 LOB 类微观 stub 分工见 `expr/intraday.py` 模块注释。
 
 ### 远期 stub 数据契约（概要）
 

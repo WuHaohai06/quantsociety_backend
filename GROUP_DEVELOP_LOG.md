@@ -9,6 +9,8 @@
 3. 工作结果：完成了因子落盘测试并产出了可供下游研究员参考的因子文件。示例文件路径：/home/yluel/share/projects/factor_data/factors/day_aggs_v1_fundamental_asset_scale_rank_2016_2025_v1/year=2016/data.parquet
 - git push 说明参考：已完成 factor_engine 的 cleaned_parquet 接入、多数据源合并能力和示例因子落盘验证，相关代码与配置已整理，可按功能模块拆分后推送。
 
+##
+
 这份文件就当团队的公共工作报告来用，不用写得太正式。
 
 目的很简单：

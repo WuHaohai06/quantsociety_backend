@@ -12,7 +12,7 @@ pytest.importorskip("polars")
 
 from api.columns import col
 from api.factor import Factor
-from api.operators import cos_, rank, sin_, ts_mean
+from api.operators import abs_, cos_, exp, rank, sin_, ts_delay, ts_mean, zscore
 from backend.factory import build_backend
 from runtime.engine import FactorEngine
 from tests.helpers import InMemorySeriesSource
@@ -51,6 +51,10 @@ def _run(engine: FactorEngine, expr):
         col("x") + 1.0,
         sin_(col("x")),
         cos_(col("x")),
+        exp(col("x")),
+        zscore(col("x")),
+        ts_delay(col("x"), 1),
+        abs_(col("x")),
     ],
 )
 def test_polars_matches_pandas(source, expr):
@@ -63,4 +67,19 @@ def test_polars_matches_pandas(source, expr):
 
     a = _run(eng_pd, expr)
     b = _run(eng_pl, expr)
+    pd.testing.assert_series_equal(a, b, check_names=False, rtol=1e-12, atol=1e-12)
+
+
+def test_polars_lazy_matches_eager(source):
+    """LazyFrame 路径与 eager Polars 数值一致。"""
+    os.environ["FACTOR_ENGINE_DISABLE_BOTTLENECK"] = "1"
+    try:
+        expr = rank(ts_mean(col("x"), 2))
+        eng_e = FactorEngine(backend=build_backend("polars"), data_source=source)
+        eng_l = FactorEngine(backend=build_backend("polars_lazy"), data_source=source)
+        a = _run(eng_e, expr)
+        b = _run(eng_l, expr)
+    finally:
+        os.environ.pop("FACTOR_ENGINE_DISABLE_BOTTLENECK", None)
+
     pd.testing.assert_series_equal(a, b, check_names=False, rtol=1e-12, atol=1e-12)

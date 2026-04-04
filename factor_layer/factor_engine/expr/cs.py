@@ -13,7 +13,10 @@ from .base import Expr
 
 @dataclass(frozen=True)
 class Rank(Expr):
-    """截面百分位排名 [0,1]；``rate`` 预留与 WQ 对齐，当前后端主要用 pct rank。"""
+    """截面百分位排名 [0,1]；``rate`` 预留与 WQ 对齐，当前后端主要用 pct rank。
+
+    **华泰对照**：图表 9 ``CS_Rank``（华泰证券《GPT 因子工厂 2.0》）。
+    """
 
     child: Expr
     rate: int = 2

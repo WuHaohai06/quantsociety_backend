@@ -8,11 +8,13 @@ from expr.alternative import AlternativeStub
 from expr.cleaning import Pasteurize, ProtectedDiv, ProtectedLog, ProtectedSqrt, Tail
 from expr.context import ChangeInstrument, Orthogonalize
 from expr.fundamental import FundamentalStub
+from expr.intraday import IntradayStub
 from expr.arithmetic import (
     Abs,
     Add,
     Densify,
     Div,
+    Exp,
     Inverse,
     Log,
     Mul,
@@ -458,6 +460,9 @@ class Analyzer:
 
             if isinstance(node, Log):
                 return IRNode(op="log", inputs=(visit(node.child),))
+
+            if isinstance(node, Exp):
+                return IRNode(op="exp", inputs=(visit(node.child),))
 
             if isinstance(node, Sqrt):
                 return IRNode(op="sqrt", inputs=(visit(node.child),))
@@ -1241,6 +1246,9 @@ class Analyzer:
                 )
 
             if isinstance(node, FundamentalStub):
+                return IRNode(op=node.op, inputs=(visit(node.child),))
+
+            if isinstance(node, IntradayStub):
                 return IRNode(op=node.op, inputs=(visit(node.child),))
 
             if isinstance(node, AlternativeStub):

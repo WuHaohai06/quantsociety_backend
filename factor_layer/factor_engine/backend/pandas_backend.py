@@ -7,16 +7,17 @@
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any, Callable, Literal
 
 import numpy as np
-import pandas as pd
+
+from .pandas_compat import pd
 
 from api.operator_registry import STUB_IR_OPS
 
 from planner.logical_plan import PlanNode
+from planner.plan_hash import plan_cache_key
 
 from .base import Backend
 from .context import ExecutionContext
@@ -83,11 +84,9 @@ def _eval_hlc_series(
     ta = _talib_mod()
     inst = ctx.instrument_col
     tcol = ctx.timestamp_col
-    out = pd.Series(np.nan, index=h.index, dtype=float)
-    for instr in h.index.get_level_values(inst).unique():
-        m = h.index.get_level_values(inst) == instr
-        ix = h.index[m]
-        hh = h.loc[ix].sort_index(level=tcol).astype(float)
+
+    def _one_instr(grp_h: pd.Series) -> pd.Series:
+        hh = grp_h.sort_index(level=tcol).astype(float)
         ll = l.reindex(hh.index).astype(float)
         cc = c.reindex(hh.index).astype(float)
         arrh = hh.to_numpy(dtype=float)
@@ -97,7 +96,9 @@ def _eval_hlc_series(
             res = np.asarray(talib_triple(arrh, arrl, arrc), dtype=float)
         else:
             res = pandas_fn(arrh, arrl, arrc)
-        out.loc[hh.index] = res
+        return pd.Series(res, index=hh.index)
+
+    out = h.groupby(level=inst, group_keys=False).apply(_one_instr)
     return out.reindex(h.index)
 
 
@@ -371,28 +372,39 @@ def _ts_roll_via_bottleneck(
         return None
 
 
-def _jsonable(v: Any) -> Any:
-    """将 attrs 值转为可 JSON 序列化的形式，供子树缓存键使用。"""
-    if isinstance(v, (str, int, float, bool)) or v is None:
-        return v
-    if isinstance(v, (list, tuple)):
-        return [_jsonable(x) for x in v]
-    if isinstance(v, dict):
-        return {str(k): _jsonable(val) for k, val in sorted(v.items())}
-    return repr(v)
+def _numba_ts_roll_wanted(ctx: ExecutionContext) -> bool:
+    if os.environ.get("FACTOR_ENGINE_USE_NUMBA", "").lower() in ("1", "true", "yes"):
+        return True
+    perf = getattr(ctx, "perf", None)
+    return perf is not None and getattr(perf, "use_numba_rolling", False)
 
 
-def _plan_cache_key(node: PlanNode) -> str:
-    """子树结构键：(op, attrs, 子节点递归)，与具体列数据无关。"""
+def _ts_roll_via_numba(
+    s: pd.Series,
+    ctx: ExecutionContext,
+    d: int,
+    min_periods: Any,
+) -> pd.Series | None:
+    """可选 Numba 滑动均值；需 ``FACTOR_ENGINE_USE_NUMBA=1`` 或 ``PerfConfig.use_numba_rolling``。"""
+    from .numba_kernels import rolling_mean_1d
 
-    def pack(n: PlanNode) -> dict[str, Any]:
-        return {
-            "op": n.op,
-            "attrs": {k: _jsonable(v) for k, v in sorted(n.attrs.items())},
-            "in": [pack(c) for c in n.inputs],
-        }
+    if not _numba_ts_roll_wanted(ctx):
+        return None
+    inst = ctx.instrument_col
+    mc = d if min_periods is None else max(1, min(int(min_periods), d))
 
-    return json.dumps(pack(node), sort_keys=True, separators=(",", ":"))
+    def one(grp: pd.Series) -> pd.Series:
+        arr = np.asarray(grp.to_numpy(dtype=float), dtype=np.float64)
+        out = rolling_mean_1d(arr, d, mc)
+        if out is None:
+            return pd.Series(np.nan, index=grp.index)
+        return pd.Series(out, index=grp.index)
+
+    try:
+        out = s.groupby(level=inst, group_keys=False).apply(one)
+        return out.reindex(s.index)
+    except Exception:
+        return None
 
 
 def _stub(node: PlanNode, ctx: ExecutionContext) -> Any:
@@ -444,10 +456,21 @@ class PandasBackend(Backend):
 
     def _eval(self, node: PlanNode, ctx: ExecutionContext):
         """后序：先算子节点，再在当前节点调用对应 kernel；可选子树结果缓存。"""
+        if node.op == "plan_ref":
+            sc = getattr(ctx, "shared_result_cache", None)
+            if sc is None:
+                raise RuntimeError(
+                    "plan_ref requires ExecutionContext.shared_result_cache; "
+                    "use FactorEngine.run_many() after compile_many CSE."
+                )
+            sid = node.attrs["sid"]
+            if sid not in sc:
+                raise KeyError(f"missing shared subplan result for sid prefix={sid[:64]!r}...")
+            return sc[sid]
         cache = getattr(ctx, "cache", None)
         cache_key: str | None = None
         if cache is not None:
-            cache_key = _plan_cache_key(node)
+            cache_key = plan_cache_key(node)
             hit = cache.get(cache_key)
             if hit is not None:
                 return hit
@@ -477,6 +500,7 @@ class PandasBackend(Backend):
         reg("nary_min", self._op_nary_min)
         reg("abs", self._wrap_unary(np.abs))
         reg("log", self._wrap_unary(np.log))
+        reg("exp", self._wrap_unary(np.exp))
         reg("sqrt", self._wrap_unary(np.sqrt))
         reg("sin", self._wrap_unary(np.sin))
         reg("cos", self._wrap_unary(np.cos))
@@ -758,6 +782,9 @@ class PandasBackend(Backend):
         bn_out = _ts_roll_via_bottleneck(s, ctx, d, mp, "mean")
         if bn_out is not None:
             return bn_out
+        nb_out = _ts_roll_via_numba(s, ctx, d, mp)
+        if nb_out is not None:
+            return nb_out
         return (
             self._by_inst_roll(s, ctx)
             .rolling(window=d, min_periods=mp)

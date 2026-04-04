@@ -1,0 +1,23 @@
+{
+  "run_timestamp": "2026-04-04T18:18:44.771343",
+  "symbol": "C_DEMO",
+  "signal_generator": "SignalCombiner(name='CombinedSignal', params={})",
+  "position_mapper": "ATRVolatilityMapper(name='ATRVolMapper', params={'atr_period': 14, 'base_long_threshold': 0.4, 'base_short_threshold': -0.4, 'target_volatility': 0.15, 'allow_short': False})",
+  "data_range": {
+    "start": "2023-01-02 00:00:00",
+    "end": "2024-07-12 00:00:00",
+    "total_bars": 400
+  },
+  "signal_stats": {
+    "mean": -0.01061524983972227,
+    "std": 0.36528805671949705,
+    "nan_count": 0
+  },
+  "position_stats": {
+    "long_bars": 106,
+    "flat_bars": 294,
+    "short_bars": 0,
+    "mean_position": 0.13712065036995189,
+    "position_changes": 114
+  }
+}

@@ -8,8 +8,12 @@ for a quantitative factor engine. Below is the complete specification of the sys
 NOTE (第 10–16 版): Pandas: group_*, cleaning, extended technical (ATR/Donchian/Keltner/MACD/CCI/Stoch/
 OBV/MFI/DEMA/WMA/KAMA/ts_skew/ts_kurt, etc.), neutralize (OLS residual), orthogonalize, context,
 bucket, trade_when, ts_step(d,anchor), hump, sin/cos, Bottleneck ts_mean/max/min.
-Stub: vec_avg, vec_sum; plus 76 future-data *_stub (fundamental_/alt_/micro_/lob_ofi_/days_since_/analyst_/etc.) — see STUB_IR_OPS in operator_registry.py.
-ADRs: adr_context_benchmark, adr_trade_when, adr_ts_step_hump. Polars: core subset only — see README.
+Stub: vec_avg, vec_sum; plus ~109 *_stub (fundamental_/alt_/micro_/intraday_/etc.) — see STUB_IR_OPS in operator_registry.py.
+ADRs: adr_context_benchmark, adr_trade_when, adr_ts_step_hump, adr_huatai_factor_factory_operators. Polars: core subset — see README.
+
+NOTE (第 20 版): Huatai "GPT Factor Factory 2.0" report uses PascalCase names — map via docs/huatai_factor_factory_operator_catalog.md to snake_case. Minute-class: intraday_*_stub (compile-only until schema).
+
+NOTE (第 22 版): Huatai cross-refs are in operator/expr docstrings; standalone htsc_factor_factory_reference.py removed. New: exp, INTRADAY_STUB_OPS.
 
 ================================================================================
 1. SYSTEM OVERVIEW

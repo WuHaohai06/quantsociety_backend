@@ -3,6 +3,10 @@
 
 **动机**：TTM、YoY、披露滞后、应计、杠杆等必须与 **可得日** 对齐；当前仅占位，防止前视偏差假实现。
 所有具体算子共用 ``FundamentalStub``，以 ``op`` 区分 IR 名；工厂见 ``api.operators.future_data``。
+
+华泰《GPT 因子工厂 2.0》图表 9 中 ``YOY`` / ``QOQ`` 等为矩阵语境；本处为 PiT/财报管线 **stub**，
+与 ``fundamental_yoy_stub`` / ``fundamental_qoq_stub`` 对应，见 ``api/operators/future_data`` docstring
+与 ``docs/huatai_factor_factory_operator_catalog.md``。
 """
 
 from __future__ import annotations

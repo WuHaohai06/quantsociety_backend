@@ -4,7 +4,7 @@ pd = pytest.importorskip("pandas")
 
 from api.columns import col
 from api.factor import Factor
-from api.operators import abs_, add, densify, max_, multiply
+from api.operators import abs_, add, densify, exp, max_, multiply
 from backend.pandas_backend import PandasBackend
 from runtime.engine import FactorEngine
 from tests.helpers import InMemorySeriesSource
@@ -27,6 +27,18 @@ def test_abs_and_add():
     f = Factor(name="t", expr=abs_(col("close") + col("close")))
     out = FactorEngine(backend=PandasBackend(), data_source=src).run(f)["result"]
     assert out.loc[(pd.Timestamp("2024-01-01"), "B")] == 4.0
+
+
+def test_exp():
+    idx = pd.MultiIndex.from_product(
+        [pd.to_datetime(["2024-01-01"]), ["A", "B"]],
+        names=["timestamp", "instrument"],
+    )
+    src = InMemorySeriesSource(data={"x": pd.Series([0.0, 1.0], index=idx)})
+    f = Factor(name="t", expr=exp(col("x")))
+    out = FactorEngine(backend=PandasBackend(), data_source=src).run(f)["result"]
+    assert out.loc[(pd.Timestamp("2024-01-01"), "A")] == pytest.approx(1.0)
+    assert out.loc[(pd.Timestamp("2024-01-01"), "B")] == pytest.approx(2.718281828, rel=1e-6)
 
 
 def test_multiply_filter_nan():

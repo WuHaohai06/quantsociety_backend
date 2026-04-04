@@ -27,7 +27,8 @@ class PortfolioBacktestArtifactBuilder:
         asset_return_wide: next_close / close - 1
 
     核心组合收益计算：
-        portfolio_return_t = sum_i(weight_{t,i} * asset_return_{t,i})
+        signal_weight_t 先整体下移一行，作为 t+1 生效的 execution_weight
+        portfolio_return_t = sum_i(execution_weight_{t,i} * asset_return_{t,i})
 
     输出：
         - returns.csv
@@ -56,6 +57,7 @@ class PortfolioBacktestArtifactBuilder:
         benchmark_date_col="trade_date",
         benchmark_return_col="benchmark_return",
     ):
+        """初始化回测器的全局参数、列名映射和可选附加数据。"""
         self.annualization = annualization
         self.return_window = return_window
         self.fee_rate = fee_rate
@@ -82,20 +84,35 @@ class PortfolioBacktestArtifactBuilder:
     # 对外主入口
     # =========================================================
     def build(self, holdings_df: pd.DataFrame, kline_df: pd.DataFrame, run_name=None):
+        """执行完整回测流程，并把结果表与元数据写入输出目录。"""
+        # 第一步：清洗输入长表，统一日期/字段类型，并去掉关键字段缺失的数据。
         holdings_df = self._prepare_holdings_long(holdings_df.copy())
         kline_df = self._prepare_kline_long(kline_df.copy())
 
+        # 第二步：把长表转换成宽表，方便后面做矩阵化对齐和向量化计算。
         weight_wide = self._build_weight_wide(holdings_df)
+
+        # 第三步：将 t 日信号整体下移到 t+1 生效，避免未来函数。
+        weight_wide = self._shift_weight_wide_for_execution(weight_wide)
         price_wide = self._build_price_wide(kline_df)
         tradable_wide = self._build_tradable_wide(price_wide)
 
+        # 第四步：把权重、价格、可交易状态对齐到统一的日期和股票维度。
         aligned = self._build_aligned_panels(weight_wide, price_wide, tradable_wide)
+
+        # 第五步：过滤不可交易或无法计算收益的单元格，得到最终可用于收益计算的面板。
         aligned = self._apply_tradable_filter(aligned)
 
+        # 第六步：基于对齐后的宽表计算逐日收益、换手、覆盖率和净值曲线。
         returns_df = self._build_returns(aligned)
+
+        # 第七步：如果提供了基准，则补充基准收益、超额收益和对应净值。
         returns_df = self._attach_benchmark_if_needed(returns_df)
+
+        # 第八步：补充回撤、胜负日标记等更便于分析的衍生列。
         returns_df = self._enrich_returns(returns_df)
 
+        # 第九步：从日收益序列和宽表面板中汇总风险收益指标与摘要信息。
         metrics_df = self._build_metrics(returns_df, aligned)
         summary_df = self._build_summary(metrics_df)
         metadata = self._build_metadata(
@@ -107,6 +124,7 @@ class PortfolioBacktestArtifactBuilder:
             run_name=run_name,
         )
 
+        # 第十步：创建输出目录，并把明细表、汇总表和元数据落盘。
         out_dir = self._make_output_dir(run_name)
         os.makedirs(out_dir, exist_ok=True)
 
@@ -137,6 +155,7 @@ class PortfolioBacktestArtifactBuilder:
     # 数据准备：长表
     # =========================================================
     def _prepare_holdings_long(self, df: pd.DataFrame) -> pd.DataFrame:
+        """清洗持仓长表，确保日期、标的和权重字段可用于后续透视。"""
         required = [self.date_col, self.symbol_col, self.weight_col]
         self._check_required_columns(df, required, "holdings_df")
 
@@ -150,6 +169,7 @@ class PortfolioBacktestArtifactBuilder:
         return df
 
     def _prepare_kline_long(self, df: pd.DataFrame) -> pd.DataFrame:
+        """清洗行情长表，确保价格字段为数值并按标的日期排序。"""
         required = [self.date_col, self.symbol_col, self.price_col]
         self._check_required_columns(df, required, "kline_df")
 
@@ -163,6 +183,7 @@ class PortfolioBacktestArtifactBuilder:
         return df
 
     def _prepare_tradable_long(self, df: pd.DataFrame) -> pd.DataFrame:
+        """清洗可交易标记长表，统一成日期-标的-布尔值结构。"""
         required = [self.tradable_date_col, self.tradable_symbol_col, self.tradable_flag_col]
         self._check_required_columns(df, required, "tradable_df")
 
@@ -179,6 +200,7 @@ class PortfolioBacktestArtifactBuilder:
     # 宽表构建
     # =========================================================
     def _build_weight_wide(self, holdings_df: pd.DataFrame) -> pd.DataFrame:
+        """把持仓长表透视成日期 x 标的的权重宽表。"""
         # 同一天同一 symbol 若重复，直接求和
         weight_wide = holdings_df.pivot_table(
             index=self.date_col,
@@ -192,7 +214,13 @@ class PortfolioBacktestArtifactBuilder:
         weight_wide.columns.name = None
         return weight_wide
 
+    def _shift_weight_wide_for_execution(self, weight_wide: pd.DataFrame) -> pd.DataFrame:
+        """将信号权重整体后移一个交易步长，使其在下一期收益上生效。"""
+        # 避免未来函数：t 日生成的信号权重在 t+1 日收益上生效
+        return weight_wide.shift(1, fill_value=0.0)
+
     def _build_price_wide(self, kline_df: pd.DataFrame) -> pd.DataFrame:
+        """把行情长表透视成日期 x 标的的价格宽表。"""
         # 同一天同一 symbol 若重复，取最后一个有效值更合理；这里用 pivot_table + last
         price_wide = kline_df.pivot_table(
             index=self.date_col,
@@ -206,6 +234,7 @@ class PortfolioBacktestArtifactBuilder:
         return price_wide
 
     def _build_tradable_wide(self, price_wide: pd.DataFrame) -> pd.DataFrame:
+        """生成可交易宽表，优先使用外部输入，否则退化为基于价格可得性的默认判断。"""
         if self.tradable_df is None:
             return self._build_default_tradable_wide(price_wide)
 
@@ -223,10 +252,12 @@ class PortfolioBacktestArtifactBuilder:
         return tradable_wide
 
     def _build_default_tradable_wide(self, price_wide: pd.DataFrame) -> pd.DataFrame:
+        """在未提供可交易标记时，用未来收益是否可计算来近似定义可交易状态。"""
         asset_return_wide = self._calculate_asset_return_wide(price_wide)
         return asset_return_wide.notna()
 
     def _calculate_asset_return_wide(self, price_wide: pd.DataFrame) -> pd.DataFrame:
+        """根据价格宽表计算逐资产未来 return_window 期收益。"""
         return price_wide.shift(-self.return_window) / price_wide - 1.0
 
     def _build_aligned_panels(
@@ -235,6 +266,7 @@ class PortfolioBacktestArtifactBuilder:
         price_wide: pd.DataFrame,
         tradable_wide: pd.DataFrame,
     ) -> dict:
+        """把权重、价格、可交易状态扩展并对齐到统一的日期和标的全集。"""
         asset_return_wide = self._calculate_asset_return_wide(price_wide)
 
         # 日期与列统一对齐
@@ -267,6 +299,8 @@ class PortfolioBacktestArtifactBuilder:
 
     def _apply_tradable_filter(self, aligned: dict) -> dict:
         """
+        根据可交易约束和价格可得性过滤资产收益面板，并生成逐资产收益贡献。
+
         tradable_aligned 是基于价格数据计算的默认值，若用户提供了 tradable_df 则覆盖默认值
         price_based_tradable 是基于价格数据计算的是否有有效价格的掩码
         tradable = tradable_aligned & price_based_tradable
@@ -297,6 +331,7 @@ class PortfolioBacktestArtifactBuilder:
     # 收益序列构建：向量化
     # =========================================================
     def _build_returns(self, aligned: dict) -> pd.DataFrame:
+        """从对齐后的宽表面板中生成逐日收益、换手、风险暴露和净值序列。"""
         weight = aligned["weight_aligned"]
         asset_ret = aligned["asset_return_wide"]
         asset_ret_raw = aligned["asset_return_wide_raw"]
@@ -338,6 +373,7 @@ class PortfolioBacktestArtifactBuilder:
         return returns_df
 
     def _attach_benchmark_if_needed(self, returns_df: pd.DataFrame) -> pd.DataFrame:
+        """若提供基准收益序列，则合并到回测结果并计算超额表现。"""
         if self.benchmark_df is None:
             return returns_df
 
@@ -365,6 +401,7 @@ class PortfolioBacktestArtifactBuilder:
         return out
 
     def _enrich_returns(self, returns_df: pd.DataFrame) -> pd.DataFrame:
+        """为收益表补充回撤和胜负日等分析辅助字段。"""
         df = returns_df.copy()
 
         df["drawdown_net"] = df["nav_net"] / df["nav_net"].cummax() - 1.0
@@ -382,6 +419,7 @@ class PortfolioBacktestArtifactBuilder:
     # 指标计算
     # =========================================================
     def _build_metrics(self, returns_df: pd.DataFrame, aligned: dict) -> pd.DataFrame:
+        """基于收益曲线、换手和覆盖率等信息汇总核心绩效指标。"""
         net_ret = returns_df["net_return"]
         gross_ret = returns_df["gross_return"]
         nav_net = returns_df["nav_net"]
@@ -522,6 +560,7 @@ class PortfolioBacktestArtifactBuilder:
         return self._metrics_map_to_df(metrics_map)
 
     def _build_summary(self, metrics_df: pd.DataFrame) -> pd.DataFrame:
+        """从完整指标表中挑选常用核心指标，形成单行摘要。"""
         metric_map = dict(zip(metrics_df["metric"], metrics_df["value"]))
 
         summary = {
@@ -555,6 +594,7 @@ class PortfolioBacktestArtifactBuilder:
         metrics_df: pd.DataFrame,
         run_name=None,
     ) -> dict:
+        """整理一次回测运行的配置、输入规模和面板统计信息。"""
         weight_wide = aligned["weight_wide"]
         price_wide = aligned["price_wide"]
         weight_aligned = aligned["weight_aligned"]
@@ -565,6 +605,7 @@ class PortfolioBacktestArtifactBuilder:
             "run_name": run_name,
             "generated_at": datetime.now().isoformat(),
             "annualization": self.annualization,
+            "weight_execution_lag": 1,
             "return_window": self.return_window,
             "fee_rate": self.fee_rate,
             "slippage_rate": self.slippage_rate,
@@ -609,15 +650,18 @@ class PortfolioBacktestArtifactBuilder:
     # 工具函数
     # =========================================================
     def _make_output_dir(self, run_name=None):
+        """生成本次回测结果的输出目录路径。"""
         run_name = run_name or datetime.now().strftime("%Y%m%d_%H%M%S")
         return os.path.join(self.output_root, self.strategy_name, run_name)
 
     def _check_required_columns(self, df, cols, df_name):
+        """检查输入表是否包含必需列，缺失时直接抛出异常。"""
         missing = [c for c in cols if c not in df.columns]
         if missing:
             raise ValueError(f"{df_name} 缺少必要列: {missing}")
 
     def _append_metric(self, metrics, name, value):
+        """把单个指标转换成基础 Python 类型后追加到指标列表中。"""
         if isinstance(value, (np.integer, np.int64, np.int32)):
             value = int(value)
         elif isinstance(value, (np.floating, np.float32, np.float64)):
@@ -625,18 +669,21 @@ class PortfolioBacktestArtifactBuilder:
         metrics.append({"metric": name, "value": value})
 
     def _metrics_map_to_df(self, metrics_map):
+        """把指标字典转换成两列表形式的 DataFrame。"""
         metrics = []
         for name, value in metrics_map.items():
             self._append_metric(metrics, name, value)
         return pd.DataFrame(metrics)
 
     def _calculate_turnover(self, weight: pd.DataFrame) -> pd.Series:
+        """根据相邻两期权重变化计算逐日换手率。"""
         turnover = weight.diff().abs().sum(axis=1)
         if len(turnover) > 0:
             turnover.iloc[0] = weight.iloc[0].abs().sum()
         return turnover
 
     def _calculate_holdings_stats(self, weight: pd.DataFrame) -> dict:
+        """统计每日持仓个数以及多空、净、总暴露。"""
         return {
             "holdings_count": (weight != 0).sum(axis=1),
             "long_exposure": weight.clip(lower=0).sum(axis=1),
@@ -646,6 +693,7 @@ class PortfolioBacktestArtifactBuilder:
         }
 
     def _calculate_asset_return_coverage(self, weight: pd.DataFrame, asset_ret_raw: pd.DataFrame) -> dict:
+        """统计持仓单元格中有多少比例能匹配到有效资产收益。"""
         holding_mask = weight != 0
         valid_on_holding = holding_mask & asset_ret_raw.notna()
 
@@ -663,17 +711,20 @@ class PortfolioBacktestArtifactBuilder:
         }
 
     def _annualize_return(self, nav_end, periods):
+        """把区间净值终值换算成年化收益。"""
         if periods <= 0 or pd.isna(nav_end) or nav_end <= 0:
             return np.nan
         return nav_end ** (self.annualization / periods) - 1.0
 
     def _annualize_vol(self, returns):
+        """把日频收益波动率换算成年化波动率。"""
         returns = pd.Series(returns).dropna()
         if len(returns) <= 1:
             return np.nan
         return returns.std(ddof=1) * np.sqrt(self.annualization)
 
     def _sharpe(self, returns, rf=0.0):
+        """计算夏普比率，rf 按年化无风险利率传入。"""
         returns = pd.Series(returns).dropna()
         if len(returns) <= 1:
             return np.nan
@@ -684,6 +735,7 @@ class PortfolioBacktestArtifactBuilder:
         return excess.mean() / vol * np.sqrt(self.annualization)
 
     def _sortino(self, returns, rf=0.0):
+        """仅用下行波动衡量风险，计算 Sortino 比率。"""
         returns = pd.Series(returns).dropna()
         if len(returns) <= 1:
             return np.nan
@@ -697,6 +749,7 @@ class PortfolioBacktestArtifactBuilder:
         return excess.mean() / downside_std * np.sqrt(self.annualization)
 
     def _max_drawdown(self, nav):
+        """计算净值曲线的最大回撤。"""
         nav = pd.Series(nav).dropna()
         if len(nav) == 0:
             return np.nan
@@ -704,17 +757,20 @@ class PortfolioBacktestArtifactBuilder:
         return dd.min()
 
     def _calmar(self, annual_return, max_drawdown):
+        """计算 Calmar 比率，即年化收益除以最大回撤绝对值。"""
         if pd.isna(annual_return) or pd.isna(max_drawdown) or abs(max_drawdown) < 1e-12:
             return np.nan
         return annual_return / abs(max_drawdown)
 
     def _win_rate(self, returns):
+        """计算收益序列中正收益样本占比。"""
         returns = pd.Series(returns).dropna()
         if len(returns) == 0:
             return np.nan
         return (returns > 0).mean()
 
     def _period_win_rate(self, returns_df, freq="M", return_col="net_return"):
+        """把日收益按周或月聚合后，统计周期维度的胜率。"""
         if len(returns_df) == 0:
             return np.nan
 
@@ -730,6 +786,7 @@ class PortfolioBacktestArtifactBuilder:
         return (period_ret > 0).mean()
 
     def _downside_vol(self, returns):
+        """仅基于负收益样本计算年化下行波动率。"""
         returns = pd.Series(returns).dropna()
         downside = returns[returns < 0]
         if len(downside) <= 1:
@@ -737,6 +794,7 @@ class PortfolioBacktestArtifactBuilder:
         return downside.std(ddof=1) * np.sqrt(self.annualization)
 
     def _max_drawdown_duration(self, nav):
+        """计算净值曲线处于水下区间的最长持续天数。"""
         nav = pd.Series(nav).dropna()
         if len(nav) == 0:
             return 0
@@ -751,6 +809,7 @@ class PortfolioBacktestArtifactBuilder:
         return int(durations.max())
 
     def _profit_loss_ratio(self, returns):
+        """计算平均盈利日收益与平均亏损日收益绝对值的比值。"""
         returns = pd.Series(returns).dropna()
         pos = returns[returns > 0]
         neg = returns[returns < 0]
@@ -764,6 +823,7 @@ class PortfolioBacktestArtifactBuilder:
         return pos_mean / neg_mean_abs
 
     def _longest_streak(self, binary_series):
+        """计算二值序列中连续为 1 的最长长度。"""
         s = pd.Series(binary_series).fillna(0).astype(int)
         grp = (s != s.shift(fill_value=0)).cumsum()
         streak_lengths = s.groupby(grp).transform("size")
@@ -771,6 +831,7 @@ class PortfolioBacktestArtifactBuilder:
         return int(streak_lengths.max()) if len(streak_lengths) > 0 else 0
 
     def _top_n_pnl_contribution_ratio(self, returns, n=5):
+        """计算收益最高的前 n 天对全部正收益的贡献占比。"""
         returns = pd.Series(returns).dropna()
         pos_sum = returns[returns > 0].sum()
         if pos_sum <= 0:
@@ -779,6 +840,7 @@ class PortfolioBacktestArtifactBuilder:
         return top_sum / pos_sum
 
     def _global_effective_asset_return_ratio(self, weight_wide: pd.DataFrame, asset_return_raw: pd.DataFrame):
+        """统计全部持仓单元格中，实际能匹配到有效收益的总体比例。"""
         holding_mask = (weight_wide != 0)
         total_holding_cells = holding_mask.to_numpy().sum()
         if total_holding_cells == 0:
@@ -788,6 +850,7 @@ class PortfolioBacktestArtifactBuilder:
         return valid_cells / total_holding_cells
 
     def _alpha_beta(self, strategy_returns, benchmark_returns):
+        """通过策略收益和基准收益的线性关系估算 beta 与年化 alpha。"""
         df = pd.DataFrame({
             "strategy": pd.to_numeric(strategy_returns, errors="coerce"),
             "benchmark": pd.to_numeric(benchmark_returns, errors="coerce"),
@@ -829,7 +892,7 @@ if __name__ == "__main__":
         symbol_col="symbol",
         weight_col="weight",
         price_col="close",
-        output_root="./results",
+        output_root=os.path.join(os.path.dirname(__file__), "results"),
         strategy_name="demo_strategy",
     )
 

@@ -6,10 +6,11 @@ factor:
   description: 流通股 - 自由流通比例截面标准化，负值代表流通受限（潜在低流动性）
 
 data_source:
-  type: cleaned_parquet
-  root: /home/yluel/share/projects/massive_parquet/cleaned_massive_data/fundamentals/stocks_floats
+  type: multi_parquet
+  root: /home/yluel/share/projects/massive_parquet/fundamentals/stocks_floats
+  timestamp_col: effective_date
+  instrument_col: ticker
   max_files: 3
-  # cleaned_parquet 默认使用 align_time / ticker
   # start_date: "2025-01-01"   # 可选：限定时间范围左端（行级过滤）
   # end_date:   "2026-12-31"   # 可选：限定时间范围右端（行级过滤）
 
@@ -18,8 +19,3 @@ backend:
 
 engine:
   enable_cache: true
-
-materialization:
-  lake_root: /tmp/factor_engine_examples_lake
-  factor_id: stocks_floats_zscore_free_float_pct_v1
-  # author: your_name

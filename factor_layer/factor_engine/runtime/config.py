@@ -34,6 +34,8 @@ class EngineConfig:
 
 @dataclass(frozen=True)
 class MaterializationConfig:
+    """因子物化到数据湖的元信息（与 ``FactorEngine.materialize*`` 配套）。"""
+
     lake_root: str | None = None
     factor_id: str | None = None
     author: str | None = None
@@ -100,4 +102,3 @@ def load_config(path: str | Path) -> FactorEngineConfig:
         engine=engine_config,
         materialization=materialization_config,
     )
-

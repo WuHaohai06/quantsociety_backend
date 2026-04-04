@@ -6,10 +6,12 @@ factor:
   description: 分钟K线 - 5分钟收盘价均线截面排名，短周期动量因子
 
 data_source:
-  type: cleaned_parquet
-  root: /home/yluel/share/projects/massive_parquet/cleaned_massive_data/us_stocks_sip/minute_aggs_v1
+  type: multi_parquet
+  root: /home/yluel/share/projects/massive_parquet/us_stocks_sip/minute_aggs_v1
+  timestamp_col: window_start
+  instrument_col: ticker
   max_files: 2
-  # cleaned_parquet 默认使用 align_time / ticker
+  timestamp_unit: "ns"
   # start_date: "2003-01-01"   # 可选：限定时间范围左端（行级过滤）
   # end_date:   "2003-12-31"   # 可选：限定时间范围右端（行级过滤）
 
@@ -18,8 +20,3 @@ backend:
 
 engine:
   enable_cache: true
-
-materialization:
-  lake_root: /tmp/factor_engine_examples_lake
-  factor_id: minute_aggs_rank_ts_mean_close_5_v1
-  # author: your_name

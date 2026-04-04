@@ -68,6 +68,8 @@ class GroupRank(Expr):
 
     输出约在 [0,1]；组内仅一点或全 NaN 时行为由后端决定（多为 NaN 或常数）。用于行业内排序、
     组内动量分位等。
+
+    **华泰对照**：图表 9 ``CS_Indus_Rank(X, indus_belong)``（华泰证券）。
     """
 
     x: Expr
