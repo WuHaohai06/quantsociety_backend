@@ -9,6 +9,12 @@ from typing import Any, Literal
 import pandas as pd
 import yaml
 
+from workspace_paths import (
+    default_factor_lake_root,
+    default_market_cache_root,
+    default_single_asset_alpha_output_root,
+)
+
 MarketDataMode = Literal["data_root", "source_path", "mock", "aggregate_bars_daily_summary"]
 FactorSourceMode = Literal["none", "factor_lake", "source_path", "legacy_factor_root"]
 SignalType = Literal["dual_ma", "macd", "rsi", "factor_threshold", "combined"]
@@ -153,7 +159,7 @@ class RunConfig:
 
 @dataclass(frozen=True)
 class OutputConfig:
-    output_dir: str = "outputs"
+    output_dir: str = field(default_factory=lambda: str(default_single_asset_alpha_output_root()))
     output_format: OutputFormat = "parquet"
     save_full_timeseries: bool = True
     save_debounced: bool = True
@@ -539,7 +545,8 @@ def load_config(path: str | Path) -> SingleAssetAlphaConfig:
         freq=_normalize_scalar_text(market_payload.get("freq")) or "1d",
         start_date=_normalize_scalar_text(market_payload.get("start_date")),
         end_date=_normalize_scalar_text(market_payload.get("end_date")),
-        cache_root=_resolve_path_text(market_payload.get("cache_root"), field_name="market_data.cache_root", base_dir=base_dir),
+        cache_root=_resolve_path_text(market_payload.get("cache_root"), field_name="market_data.cache_root", base_dir=base_dir)
+        or str(default_market_cache_root()),
         mock_periods=int(market_payload.get("mock_periods", 500)),
         mock_start_date=_normalize_scalar_text(market_payload.get("mock_start_date")) or "2023-01-01",
         mock_seed=int(market_payload.get("mock_seed", 42)),
@@ -563,13 +570,14 @@ def load_config(path: str | Path) -> SingleAssetAlphaConfig:
         },
     )
 
+    factor_source_mode = _normalize_scalar_text(factor_payload.get("mode")) or "none"
     factor_source = FactorSourceConfig(
-        mode=_normalize_scalar_text(factor_payload.get("mode")) or "none",  # type: ignore[arg-type]
+        mode=factor_source_mode,  # type: ignore[arg-type]
         factor_lake_root=_resolve_path_text(
             factor_payload.get("factor_lake_root"),
             field_name="factor_source.factor_lake_root",
             base_dir=base_dir,
-        ),
+        ) or (str(default_factor_lake_root()) if factor_source_mode == "factor_lake" else None),
         source_path=_resolve_path_text(
             factor_payload.get("source_path"),
             field_name="factor_source.source_path",
@@ -594,7 +602,8 @@ def load_config(path: str | Path) -> SingleAssetAlphaConfig:
         end_date=_normalize_scalar_text(run_payload.get("end_date")),
     )
     output = OutputConfig(
-        output_dir=_resolve_path_text(output_payload.get("output_dir") or "outputs", field_name="output.output_dir", base_dir=base_dir) or str((base_dir / "outputs").resolve()),
+        output_dir=_resolve_path_text(output_payload.get("output_dir"), field_name="output.output_dir", base_dir=base_dir)
+        or str(default_single_asset_alpha_output_root(meta.strategy_id, meta.version)),
         output_format=_normalize_scalar_text(output_payload.get("output_format")) or "parquet",  # type: ignore[arg-type]
         save_full_timeseries=bool(output_payload.get("save_full_timeseries", True)),
         save_debounced=bool(output_payload.get("save_debounced", True)),

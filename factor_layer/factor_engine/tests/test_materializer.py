@@ -187,6 +187,14 @@ class TestIRHash:
 class TestParquetMaterializer:
     """物化器核心测试。"""
 
+    def test_default_lake_root_uses_workspace_data(self, tmp_path, monkeypatch):
+        workspace_root = tmp_path / "workspace_data"
+        monkeypatch.setenv("QUANTSOCIETY_WORKSPACE_DATA_ROOT", str(workspace_root))
+
+        mat = ParquetMaterializer()
+
+        assert mat.lake_root == workspace_root / "factors" / "lake"
+
     def test_basic_materialize(self, tmp_path):
         """基本落盘：写入、验证 Parquet 和 Catalog。"""
         mat = ParquetMaterializer(lake_root=tmp_path)

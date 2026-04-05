@@ -132,3 +132,44 @@ def test_run_from_config_writes_holdings_outputs_and_filters_unquoted_dates(tmp_
     assert (tmp_path / "generated_holdings" / "summary.json").exists()
     assert (tmp_path / "generated_holdings" / "config_snapshot.yaml").exists()
     assert result["summary"]["trade_days"] == 2
+
+
+def test_run_from_config_defaults_output_root_to_workspace_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    workspace_root = tmp_path / "workspace_data"
+    monkeypatch.setenv("QUANTSOCIETY_WORKSPACE_DATA_ROOT", str(workspace_root))
+
+    signal = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2024-01-02", "2024-01-02"]),
+            "symbol": ["AAA", "BBB"],
+            "composite_score": [2.0, 1.0],
+            "selected_flag": [True, True],
+            "side": ["LONG", "LONG"],
+        }
+    )
+    signal_path = tmp_path / "signal.parquet"
+    signal.to_parquet(signal_path, index=False)
+
+    config_path = tmp_path / "default_output.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "meta": {"portfolio_id": "demo_holdings", "version": "v2"},
+                "inputs": {
+                    "signal": {
+                        "path": "./signal.parquet",
+                        "format": "parquet",
+                    }
+                },
+            },
+            sort_keys=False,
+        )
+    )
+
+    result = run_from_config(config_path)
+
+    output_root = workspace_root / "strategy" / "holdings" / "demo_holdings_v2"
+    assert not result["holdings"].empty
+    assert (output_root / "holdings" / "holdings.parquet").exists()
+    assert (output_root / "manifest.json").exists()
+    assert (output_root / "config_snapshot.yaml").exists()

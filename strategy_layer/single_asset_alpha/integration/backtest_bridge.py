@@ -8,6 +8,10 @@
   或任意已通过 ``TargetPositionSchema`` 格式化的表。
 - **输出**：直接传入 ``run_single_asset_backtest(..., ohlcv=..., target_position=...)``。
 
+返回的 ``report["summary"]`` 中，本模块会在 ``run_single_asset_backtest`` 生成报告后，**覆盖写入**
+``execution_effective_lag_bars`` 与 ``return_attribution``，以反映 **C 侧 shift + D 侧 target_lag_bars**
+的合成滞后（与 ``single_asset_backtest/README.md`` **§17.4** 一致）。仅使用 D 侧时请直接调 runner，勿经本 bridge。
+
 依赖：需安装 ``factor-engine[backtest]``（Backtrader），且 ``PYTHONPATH`` 同时包含
 ``backtest_layer`` 与 ``factor_layer/factor_engine``（见 ``single_asset_backtest/README.md`` 文首）。
 """

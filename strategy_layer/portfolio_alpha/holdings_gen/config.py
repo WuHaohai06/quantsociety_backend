@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from workspace_paths import default_holdings_root
+
 
 @dataclass(frozen=True)
 class MetaConfig:
@@ -160,7 +162,14 @@ def load_config(path: str | Path) -> HoldingsGenConfig:
     if not isinstance(signal_path, str) or not signal_path.strip():
         raise ValueError("inputs.signal.path 不能为空")
     output_root = output_payload.get("root")
-    if not isinstance(output_root, str) or not output_root.strip():
+    if output_root is None:
+        resolved_output_root = str(default_holdings_root(
+            str(meta_payload.get("portfolio_id") or "generated_holdings"),
+            str(meta_payload.get("version") or "v1"),
+        ))
+    elif isinstance(output_root, str) and output_root.strip():
+        resolved_output_root = _resolve_path(output_root, base_dir=base_dir)
+    else:
         raise ValueError("output.root 不能为空")
 
     config = HoldingsGenConfig(
@@ -205,7 +214,7 @@ def load_config(path: str | Path) -> HoldingsGenConfig:
             params={str(key): value for key, value in _as_mapping(risk_payload.get("params"), field_name="risk_control.params").items()},
         ),
         output=OutputConfig(
-            root=_resolve_path(output_root, base_dir=base_dir),
+            root=resolved_output_root,
             holdings_filename=str(output_payload.get("holdings_filename") or "holdings.parquet"),
             selected_signal_filename=str(output_payload.get("selected_signal_filename") or "selected_signal.parquet"),
             raw_holdings_filename=str(output_payload.get("raw_holdings_filename") or "raw_holdings.parquet"),

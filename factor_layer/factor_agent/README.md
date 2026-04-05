@@ -73,13 +73,56 @@ factor_agent/
 └── main.py                   # 主入口
 ```
 
-## 使用说明（待实现）
+## 使用方式
 
-- 将研报 PDF 放入指定输入目录或通过接口传入。
-- 运行 `main.py` 启动 Agent 循环，产出 YAML v1 并调用评价脚本。
-- 根据评分与阈值决定是否迭代；达标后最终 YAML 输出到指定路径，版本与评分可审计。
+### 1. 直接运行主入口
 
-## 依赖与运行（待补充）
+```bash
+python factor_layer/factor_agent/main.py "请根据当前上下文生成首版配置文件 YAML，并写入 output/config_v1.yaml，然后调用 run_eval 评分。"
+```
+
+如果不传 query，`main.py` 会使用内置默认 query。
+
+### 2. 选择模型提供方
+
+当前 `main.py` 支持：
+
+- `--provider anthropic`
+- `--provider minimax`
+
+也可以通过环境变量控制：
+
+- `LLM_PROVIDER`
+- `LLM_MODEL`
+- `MINIMAX_API_KEY`
+- `MINIMAX_MODEL`
+
+### 3. 输出位置
+
+从当前 `config/settings.py` 看，运行期默认使用：
+
+- `output/`：存放 YAML 版本和评分结果
+- `scripts/配置文件评价脚本.py`：评分入口
+
+## 依赖与运行
 
 - Python 3.x
-- 依赖见 `requirements.txt`（待创建）
+- 需要安装 `anthropic`
+- 使用 Anthropic 时需要 `ANTHROPIC_API_KEY`
+- 使用 Minimax 时需要 `MINIMAX_API_KEY`
+
+当前默认阈值与循环参数见：
+
+- `config/settings.py`
+
+其中包括：
+
+- `MAX_ROUNDS = 10`
+- `SCORE_THRESHOLD = 0.7`
+- `OUTPUT_DIR = output/`
+
+## 适合什么时候看这个目录
+
+- 你想把研报内容自动翻译成 factor_engine 可消费的 YAML
+- 你想了解“生成 YAML → 调评价脚本 → 根据分数修订”的闭环
+- 你在排查评分脚本、tool、skill 或 verifier 的协作关系

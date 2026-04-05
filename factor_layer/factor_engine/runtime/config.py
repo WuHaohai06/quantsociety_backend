@@ -6,6 +6,8 @@ from typing import Any
 
 import yaml
 
+from workspace_paths import default_factor_lake_root
+
 
 @dataclass(frozen=True)
 class FactorDefinitionConfig:
@@ -53,9 +55,22 @@ class FactorEngineConfig:
     materialization: MaterializationConfig | None = None
 
 
+def _resolve_optional_path(value: Any, *, base_dir: Path) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    path = Path(text)
+    if path.is_absolute():
+        return str(path)
+    return str((base_dir / path).resolve())
+
+
 def load_config(path: str | Path) -> FactorEngineConfig:
     config_path = Path(path)
     payload = yaml.safe_load(config_path.read_text()) or {}
+    base_dir = config_path.parent.resolve()
 
     factor_payload = payload.get("factor", {})
     data_source_payload = payload.get("data_source", {})
@@ -87,7 +102,8 @@ def load_config(path: str | Path) -> FactorEngineConfig:
         if not isinstance(materialization_payload, dict):
             raise ValueError("Config materialization section must be a mapping")
         materialization_config = MaterializationConfig(
-            lake_root=materialization_payload.get("lake_root"),
+            lake_root=_resolve_optional_path(materialization_payload.get("lake_root"), base_dir=base_dir)
+            or str(default_factor_lake_root()),
             factor_id=materialization_payload.get("factor_id"),
             author=materialization_payload.get("author"),
             frequency=materialization_payload.get("frequency"),

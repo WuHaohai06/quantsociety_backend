@@ -25,11 +25,22 @@ htmlcov/
 # OS/editor noise
 .DS_Store
 
+# 运行产物（根目录与各模块下的 outputs，避免误提交）
+outputs/
+workspace_data/
+**/outputs/
+*_run_meta.json
+strategy_layer/data/
+
 # Generated project outputs
 factor_layer/factor_agent/output/audit_log.jsonl
 factor_layer/factor_agent/output/MinerU_markdown_*.md
 factor_layer/factor_agent/output/MinerU_markdown_*.yaml
 factor_layer/factor_indicators/evaluation_output/
+factor_layer/factor_indicators_lysj/evaluation_output/
+factor_layer/factor_indicators_lysj/NQ.parquet
+factor_layer/factor_indicators_lysj/NQ_vwap.parquet
+factor_layer/factor_indicators_lysj/factor_output.parquet
 raw_data_layer/raw_data_fetching/download_results.csv
 strategy_layer/portfolio_alpha/multiple_factor_composite/runs/
 demo/portfolio_demo/factor_lake/
@@ -38,10 +49,6 @@ demo/portfolio_demo/outputs/
 demo/single_asset_demo/cache/
 demo/single_asset_demo/factor_lake/
 demo/single_asset_demo/outputs/
-outputs/C_D_E2E_run_meta.json
-outputs/factor_lake_demo/
-outputs/single_asset_alpha/
-strategy_layer/outputs/
 
 # User local workspace
 users_workspace/whh_workspace/

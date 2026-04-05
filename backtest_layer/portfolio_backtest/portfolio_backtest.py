@@ -5,6 +5,8 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+from workspace_paths import default_portfolio_backtest_root
+
 
 class PortfolioBacktestArtifactBuilder:
     """
@@ -51,7 +53,7 @@ class PortfolioBacktestArtifactBuilder:
         tradable_date_col="trade_date",
         tradable_symbol_col="symbol",
         tradable_flag_col="is_tradable",
-        output_root="./results",
+        output_root=None,
         strategy_name="default_strategy",
         benchmark_df=None,
         benchmark_date_col="trade_date",
@@ -73,7 +75,7 @@ class PortfolioBacktestArtifactBuilder:
         self.tradable_symbol_col = tradable_symbol_col
         self.tradable_flag_col = tradable_flag_col
 
-        self.output_root = output_root
+        self.output_root = output_root or str(default_portfolio_backtest_root())
         self.strategy_name = strategy_name
 
         self.benchmark_df = benchmark_df
@@ -892,7 +894,7 @@ if __name__ == "__main__":
         symbol_col="symbol",
         weight_col="weight",
         price_col="close",
-        output_root=os.path.join(os.path.dirname(__file__), "results"),
+        output_root=str(default_portfolio_backtest_root()),
         strategy_name="demo_strategy",
     )
 

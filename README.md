@@ -1,100 +1,102 @@
 # QuantSociety Backend Project
 
-量化研究后端工作区，覆盖原始数据获取与清洗、因子表达引擎、因子生成 Agent、因子评估与可视化等环节。
+这是一个多模块量化研究后端工作区，覆盖数据获取与清洗、因子生成、因子评估与准入、策略层信号与持仓生成、以及单资产和组合回测。
 
-这个仓库目前更接近一个多模块工作区，而不是单一可直接安装的 Python 包。不同子目录有各自的运行入口、依赖和开发节奏。
+仓库不是一个单一 Python 包，而是按研究链路拆成多个项目目录。阅读和使用时，建议先从一级目录 README 入手，再进入各子模块自己的详细文档。
 
-## 目录概览
+## 项目地图
 
-- `raw_data_layer/`：原始数据抓取、校验与清洗。
-- `factor_layer/`：因子相关核心实现，包括 Agent、计算引擎、评估模块与因子池。
-- `backtest_layer/`：回测层预留目录。
-- `strategy_layer/`：策略层预留目录。
-- `users_workspace/`：本地实验区，不属于核心实现主线。
+| 目录 | 作用 | 建议入口 |
+| --- | --- | --- |
+| [raw_data_layer/README.md](raw_data_layer/README.md) | 原始数据抓取、校验、清洗与样例数据 | `raw_data_fetching/`、`raw_data_cleaning/` |
+| [factor_layer/README.md](factor_layer/README.md) | 因子计算、评估、准入、Agent 与特化因子项目 | `factor_engine/` |
+| [strategy_layer/README.md](strategy_layer/README.md) | 单资产择时与组合策略层 | `single_asset_alpha/`、`portfolio_alpha/` |
+| [backtest_layer/README.md](backtest_layer/README.md) | 单资产和组合回测、示例与测试 | `single_asset_backtest/`、`portfolio_backtest/` |
+| [demo/README.md](demo/README.md) | 端到端 smoke demo 与 notebook 展示 | `all_pipeline_demo/`、`all_pipeline_single_asset_demo/` |
+| `workspace_data/` | 统一运行时产物根目录 | demo 和配置驱动流水线默认写入 |
 
-## 主要模块
+## 当前推荐使用的主链
 
-### 1. Factor Agent
+### 1. 多因子组合主链
 
-路径：`factor_layer/factor_agent/`
+`raw_data_layer` → `factor_layer/factor_engine` → `factor_layer/factor_evaluation` → `factor_layer/factor_admission` → `strategy_layer/portfolio_alpha/multiple_factor_composite` → `strategy_layer/portfolio_alpha/holdings_gen` → `backtest_layer/portfolio_backtest`
 
-定位：将研报 PDF 转成可执行的 YAML 因子配置，并通过评分反馈循环持续修订。
+推荐 smoke demo：
 
-核心流程：PDF -> LLM 生成 YAML -> 评价脚本打分 -> 未达标则继续修订。
+- [demo/all_pipeline_demo/README.md](demo/all_pipeline_demo/README.md)
 
-参考文档：`factor_layer/factor_agent/README.md`
+### 2. 单资产择时主链
 
-### 2. Factor Engine
+`raw_data / market_data` + `factor_lake` → `strategy_layer/single_asset_alpha` → `backtest_layer/single_asset_backtest`
 
-路径：`factor_layer/factor_engine/`
+推荐 smoke demo：
 
-定位：可扩展的量化因子计算引擎，支持表达式树、DSL、YAML 配置和多后端执行。
+- [demo/all_pipeline_single_asset_demo/README.md](demo/all_pipeline_single_asset_demo/README.md)
 
-特点：
+### 3. 特化分钟级因子评估链
 
-- 支持 Pandas 后端，Polars 后端提供部分能力。
-- 支持截面、时序、分组、清洗、技术指标等算子。
-- 可对接 Parquet 数据源进行配置驱动运行。
+`factor_layer/factor_indicators_lysj` 当前维护一条分钟级期货因子评估链，重点是 NQ 的 VWAP Reversion 因子。
 
-参考文档：`factor_layer/factor_engine/README.md`
+入口文档：
 
-### 3. Factor Indicators
+- [factor_layer/factor_indicators_lysj/README.md](factor_layer/factor_indicators_lysj/README.md)
 
-路径：`factor_layer/factor_indicators/`
+## 常用入口
 
-定位：分钟级期货因子评估与可视化模块，当前重点是 NQ 的 VWAP Reversion 因子。
+| 目标 | 入口 |
+| --- | --- |
+| 全链路组合 demo | `python demo/all_pipeline_demo/run_all_pipeline_demo.py` |
+| 全链路单资产 demo | `python demo/all_pipeline_single_asset_demo/run_single_asset_pipeline_demo.py` |
+| 因子配置运行 | `python factor_layer/factor_engine/examples/...` 或 `FactorEngine.run_from_config(...)` |
+| 因子评估 | `python factor_layer/factor_evaluation/run_from_config.py <config.yaml>` |
+| 因子准入 | `python factor_layer/factor_admission/run_from_config.py <config.yaml>` |
+| 单资产策略流水线 | `python strategy_layer/single_asset_alpha/run_from_config.py <config.yaml>` |
+| 组合信号合成 | `python strategy_layer/portfolio_alpha/multiple_factor_composite/run_from_config.py <config.yaml>` |
+| 组合持仓生成 | `python strategy_layer/portfolio_alpha/holdings_gen/run_from_config.py <config.yaml>` |
 
-包含内容：
+## `workspace_data` 约定
 
-- 因子生成脚本
-- 评估框架
-- Streamlit 可视化看板
+新流程优先把运行时产物落到 `workspace_data/`，而不是散落在各个模块目录下。当前仓库里主要有这些约定路径：
 
-参考文档：`factor_layer/factor_indicators/PROJECT_HANDOFF_AI.md`
+- `workspace_data/demos/`：demo 汇总输入、配置快照和 summary
+- `workspace_data/factors/lake/`：factor lake 与评估结果
+- `workspace_data/strategy/`：策略层输出，例如组合信号、holdings、single_asset_alpha 结果
+- `workspace_data/backtests/`：组合和单资产回测结果
+- `workspace_data/cache/`：行情缓存和中间缓存
 
-### 4. Raw Data Layer
+旧目录里仍保留一些历史 demo 的本地 `outputs/`、`cache/` 与 notebook 资产，属于兼容或历史记录，不再作为新的默认落盘路径。
 
-路径：`raw_data_layer/`
+## 阅读顺序
 
-定位：原始数据下载、格式校验、清洗准备。
+如果你第一次进入这个仓库，建议按下面顺序读：
 
-当前可见实现主要在：
+1. [README.md](README.md)
+2. [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md)
+3. [demo/README.md](demo/README.md)
+4. [factor_layer/README.md](factor_layer/README.md)
+5. [strategy_layer/README.md](strategy_layer/README.md)
+6. [backtest_layer/README.md](backtest_layer/README.md)
+7. [raw_data_layer/README.md](raw_data_layer/README.md)
+8. [IMPLEMENTED_WORKFLOWS.md](IMPLEMENTED_WORKFLOWS.md)
+9. [WORKFLOW_OVERVIEW.md](WORKFLOW_OVERVIEW.md)
 
-- `raw_data_layer/raw_data_fetching/`：历史数据抓取、下载记录、Parquet 校验。
-- `raw_data_layer/raw_data_cleaning/`：数据清洗相关目录。
+## 环境与测试
 
-## 建议阅读顺序
+- 很多脚本要求 `PYTHONPATH` 至少包含仓库根、`backtest_layer/`、`factor_layer/factor_engine/`。详细说明见对应子模块 README。
+- 根目录的 [requirements-dev.txt](requirements-dev.txt) 提供 pytest 等开发依赖。
+- 单资产回测与联调示例需要 Backtrader，可用 `pip install "factor-engine[backtest]"`。
 
-如果你是第一次进入这个仓库，建议按下面顺序了解：
+常用测试命令：
 
-1. [IMPLEMENTED_WORKFLOWS.md](IMPLEMENTED_WORKFLOWS.md)：先看已经落地的工作流和文件流总览。
-2. `factor_layer/factor_engine/README.md`：再理解因子表达和执行框架。
-3. `factor_layer/factor_agent/README.md`：再看 Agent 如何产出 YAML 配置。
-4. `factor_layer/factor_indicators/PROJECT_HANDOFF_AI.md`：最后看因子评估与可视化链路。
-
-## 工作流文档
-
-仓库里已经实现的功能串联关系、上下游文件流、当前断点说明，见：
-
-- [IMPLEMENTED_WORKFLOWS.md](IMPLEMENTED_WORKFLOWS.md)
-
-## 快速开始
-
-由于仓库没有统一的根级依赖管理，建议按模块分别运行：
-
-1. 进入目标子模块目录。
-2. 使用该模块自己的依赖文件或现有环境安装依赖。
-3. 从对应入口脚本启动。
-
-常见入口示例：
-
-- `factor_layer/factor_agent/main.py`
-- `factor_layer/factor_engine/examples/`
-- `factor_layer/factor_indicators/factor_eval_dashboard.py`
-- `raw_data_layer/raw_data_fetching/download_all_history.py`
+```bash
+pytest backtest_layer/tests -q -m "not integration"
+pytest demo/all_pipeline_demo/test_all_pipeline_demo.py -q
+pytest demo/all_pipeline_single_asset_demo/test_single_asset_pipeline_demo.py -q
+```
 
 ## 当前状态
 
-- `factor_layer/` 是当前最完整、最值得优先阅读的实现层。
-- `backtest_layer/` 与 `strategy_layer/` 目前还是预留目录。
-- 仓库内包含一定数量的本地输出文件与实验痕迹，提交前应结合 `.gitignore` 检查变更范围。
+- `factor_layer/factor_engine/` 是目前最完整、最稳定的基础设施层。
+- `strategy_layer/single_asset_alpha/` 与 `backtest_layer/single_asset_backtest/` 已形成可跑通的单资产 C→D 路径。
+- `strategy_layer/portfolio_alpha/`、`backtest_layer/portfolio_backtest/` 和 `demo/all_pipeline_demo/` 已能串起组合研究主链。
+- 仓库中存在历史 notebook、缓存和本地产物；提交前应结合 `.gitignore` 检查变更范围。

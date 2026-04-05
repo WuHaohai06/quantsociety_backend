@@ -594,3 +594,9 @@ pytest backtest_layer/tests/test_backtest_*.py -q
 ### 17.3 团队进度与变更说明
 
 阶段进展与可复用的 **git commit 说明**可写在仓库根 **`GROUP_DEVELOP_LOG.md`**（约定：**新记录写在文件最上方**）。与本子系统相关的协议仍以 **`docs/adr_backtest_target_position.md`** 与本文为准。
+
+### 17.4 `summary` 字段：runner 与 C→D bridge 的关系
+
+- **`run_single_asset_backtest`** 会按 ADR 写入 **`execution_effective_lag_bars`**、**`return_attribution`** 等（与单标执行语义一致）。  
+- 若走 **`run_pipeline_then_single_asset_backtest`**，bridge 在返回前会 **按 C/D 两侧滞后重新计算**有效滞后，并 **覆盖**上述字段为「C 的 `shift_bars` + D 的 `target_lag_bars`」的合成说明（单标 target_position 路径；**禁止双 lag 时**二者不会同时为正）。  
+- 若你希望 **仅以 D 侧 `runner` 为准**，应直接调用 **`run_single_asset_backtest`**，不使用 bridge。

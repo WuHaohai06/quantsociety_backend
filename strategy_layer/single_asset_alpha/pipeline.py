@@ -24,6 +24,8 @@ from typing import Any
 import json
 import logging
 
+from workspace_paths import default_single_asset_alpha_output_root
+
 # 设置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -76,13 +78,13 @@ class StrategyPipeline:
         signal_generator: BaseSignalGenerator,
         position_mapper: BasePositionMapper,
         data_fetcher: DataFetcher | None = None,
-        output_dir: str | Path = "outputs",
+        output_dir: str | Path | None = None,
     ):
         self.symbol = symbol
         self.signal_generator = signal_generator
         self.position_mapper = position_mapper
         self.data_fetcher = data_fetcher or DataFetcher()
-        self.output_dir = Path(output_dir)
+        self.output_dir = Path(output_dir or default_single_asset_alpha_output_root(symbol))
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def run(
@@ -277,7 +279,7 @@ def create_dual_ma_strategy(
     slow_window: int = 20,
     long_threshold: float = 0.5,
     allow_short: bool = False,
-    output_dir: str = "outputs",
+    output_dir: str | Path | None = None,
     **kwargs,
 ) -> StrategyPipeline:
     """创建双均线策略流水线。"""
@@ -308,7 +310,7 @@ def create_macd_strategy(
     signal_period: int = 9,
     long_threshold: float = 0.4,
     allow_short: bool = False,
-    output_dir: str = "outputs",
+    output_dir: str | Path | None = None,
     **kwargs,
 ) -> StrategyPipeline:
     """创建 MACD 策略流水线。"""
@@ -336,7 +338,7 @@ def create_combined_strategy(
     symbol: str = "000001.SZ",
     use_atr_mapper: bool = True,
     allow_short: bool = False,
-    output_dir: str = "outputs",
+    output_dir: str | Path | None = None,
     **kwargs,
 ) -> StrategyPipeline:
     """创建多信号组合策略流水线。"""
@@ -396,7 +398,7 @@ def main():
         default="combined",
         help="预制策略",
     )
-    parser.add_argument("--output-dir", default="outputs", help="输出目录")
+    parser.add_argument("--output-dir", default=None, help="输出目录")
     parser.add_argument(
         "--format", choices=["parquet", "csv"], default="parquet", help="输出格式"
     )

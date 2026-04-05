@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from workspace_paths import default_composite_signal_root, default_factor_lake_root
+
 
 @dataclass(frozen=True)
 class MetaConfig:
@@ -183,11 +185,25 @@ def _normalize_scalar_text(value: Any) -> str | None:
     return str(value)
 
 
+def _resolve_path_text(value: Any, *, base_dir: Path, field_name: str) -> str | None:
+    text = _normalize_scalar_text(value)
+    if text is None:
+        return None
+    stripped = text.strip()
+    if not stripped:
+        raise ValueError(f"{field_name} 不能为空")
+    path = Path(stripped)
+    if path.is_absolute():
+        return str(path)
+    return str((base_dir / path).resolve())
+
+
 def load_config(path: str | Path) -> CompositeSignalConfig:
     config_path = Path(path)
     payload = yaml.safe_load(config_path.read_text()) or {}
     if not isinstance(payload, dict):
         raise ValueError("配置文件顶层必须是 object")
+    base_dir = config_path.parent.resolve()
 
     meta_payload = _as_mapping(payload.get("meta"), field_name="meta")
     source_payload = _as_mapping(payload.get("source"), field_name="source")
@@ -212,9 +228,11 @@ def load_config(path: str | Path) -> CompositeSignalConfig:
         description=meta_payload.get("description"),
     )
 
-    factor_lake_root = source_payload.get("factor_lake_root")
-    if not isinstance(factor_lake_root, str) or not factor_lake_root.strip():
-        raise ValueError("source.factor_lake_root 不能为空")
+    factor_lake_root = _resolve_path_text(
+        source_payload.get("factor_lake_root"),
+        base_dir=base_dir,
+        field_name="source.factor_lake_root",
+    ) or str(default_factor_lake_root())
     source = SourceConfig(
         factor_lake_root=factor_lake_root,
         start=_normalize_scalar_text(source_payload.get("start")),
@@ -244,10 +262,10 @@ def load_config(path: str | Path) -> CompositeSignalConfig:
     auxiliary_sources = []
     for raw in _as_list_of_mappings(payload.get("auxiliary_sources"), field_name="auxiliary_sources"):
         name = raw.get("name")
-        data_path = raw.get("path")
+        data_path = _resolve_path_text(raw.get("path"), base_dir=base_dir, field_name="auxiliary_sources.path")
         if not isinstance(name, str) or not name.strip():
             raise ValueError("auxiliary_sources.name 不能为空")
-        if not isinstance(data_path, str) or not data_path.strip():
+        if data_path is None:
             raise ValueError("auxiliary_sources.path 不能为空")
         auxiliary_sources.append(
             AuxiliarySourceConfig(
@@ -327,11 +345,13 @@ def load_config(path: str | Path) -> CompositeSignalConfig:
         score_column=str(composition_payload.get("score_column") or "composite_score"),
     )
 
-    output_root = output_payload.get("root") or str(
-        config_path.parent / "runs" / f"{meta.signal_id}_{meta.version}"
-    )
+    output_root = _resolve_path_text(
+        output_payload.get("root"),
+        base_dir=base_dir,
+        field_name="output.root",
+    ) or str(default_composite_signal_root(meta.signal_id, meta.version))
     output = OutputConfig(
-        root=str(output_root),
+        root=output_root,
         write_raw_panel=bool(output_payload.get("write_raw_panel", True)),
         write_preprocessed_panel=bool(output_payload.get("write_preprocessed_panel", True)),
         write_neutralized_panel=bool(output_payload.get("write_neutralized_panel", True)),

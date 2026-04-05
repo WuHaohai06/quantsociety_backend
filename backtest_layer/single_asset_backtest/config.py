@@ -6,6 +6,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from workspace_paths import default_market_cache_root
+
 
 PortfolioExecutionEngine = Literal["python", "numpy", "numba", "auto"]
 MarketDataMode = Literal["data_root", "source_path", "aggregate_bars_daily_summary"]
@@ -40,7 +42,7 @@ class BacktestConfig:
     prefer_parquet: bool = True
     max_rows: int | None = None
     strict_real_data: bool = False
-    market_data_cache_root: str | None = None
+    market_data_cache_root: str | None = field(default_factory=lambda: str(default_market_cache_root()))
 
     aggregate_bars_root: str | None = None
     aggregate_dataset: str = "daily_market_summary"

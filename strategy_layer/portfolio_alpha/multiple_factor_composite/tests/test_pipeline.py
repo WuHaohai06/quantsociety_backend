@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from strategy_layer.portfolio_alpha.multiple_factor_composite.composite_config import OrthogonalizationStepConfig, WeightingConfig
 from strategy_layer.portfolio_alpha.multiple_factor_composite.composite_config import FactorSpec
+from strategy_layer.portfolio_alpha.multiple_factor_composite.composite_config import load_config
 from strategy_layer.portfolio_alpha.multiple_factor_composite.factor_reader import FactorLakeReader
 from strategy_layer.portfolio_alpha.multiple_factor_composite.orthogonalization import apply_orthogonalization_steps
 from strategy_layer.portfolio_alpha.multiple_factor_composite.pipeline import run_from_config
@@ -177,6 +178,44 @@ def test_run_from_config_accepts_unquoted_yaml_dates(tmp_path: Path):
 
     assert not result["signal"].empty
     assert (output_root / "signals" / "composite_signal.parquet").exists()
+
+
+def test_load_config_defaults_output_root_to_workspace_data_and_resolves_relative_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    workspace_root = tmp_path / "workspace_data"
+    monkeypatch.setenv("QUANTSOCIETY_WORKSPACE_DATA_ROOT", str(workspace_root))
+
+    factor_lake_root = tmp_path / "factor_lake"
+    auxiliary_path = tmp_path / "auxiliary" / "controls.parquet"
+    auxiliary_path.parent.mkdir(parents=True, exist_ok=True)
+    auxiliary_path.write_bytes(b"")
+
+    config_path = tmp_path / "relative_defaults.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "meta": {"signal_id": "relative_defaults", "version": "v2"},
+                "source": {"factor_lake_root": "./factor_lake"},
+                "factors": [{"factor_id": "value_factor_v1", "alias": "value"}],
+                "auxiliary_sources": [
+                    {
+                        "name": "controls",
+                        "path": "./auxiliary/controls.parquet",
+                    }
+                ],
+            },
+            sort_keys=False,
+        )
+    )
+
+    config = load_config(config_path)
+
+    assert config.source.factor_lake_root == str(factor_lake_root.resolve())
+    assert config.auxiliary_sources[0].path == str(auxiliary_path.resolve())
+    assert config.output is not None
+    assert config.output.root == str(workspace_root / "strategy" / "composite_signals" / "relative_defaults_v2")
 
 
 def test_factor_reader_returns_canonical_timestamp_symbol(tmp_path: Path):

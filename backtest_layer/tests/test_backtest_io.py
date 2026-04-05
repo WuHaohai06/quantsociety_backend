@@ -42,9 +42,13 @@ def test_load_ohlcv_validates_temporal_integrity(tmp_path):
         load_ohlcv(path, strict_temporal_validation=True)
 
 
-def test_backtest_config_defaults_ibkr_data_root():
+def test_backtest_config_defaults_ibkr_data_root_and_workspace_cache(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace_data"
+    monkeypatch.setenv("QUANTSOCIETY_WORKSPACE_DATA_ROOT", str(workspace_root))
+
     cfg = BacktestConfig()
     assert cfg.data_root == "/home/yluel/share/data/ibkr"
+    assert cfg.market_data_cache_root == str(workspace_root / "cache" / "market_data")
 
 
 def test_load_ohlcv_from_config_matches_gold_alias_file(tmp_path):

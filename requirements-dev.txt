@@ -1,0 +1,7 @@
+# 开发 / 测试依赖（在仓库根使用）
+# 安装：pip install -r requirements-dev.txt
+#
+# 因子引擎 + 回测（C-D 集成、backtest_layer 测试）还需：
+#   pip install -e "factor_layer/factor_engine[backtest,pandas]"
+#
+pytest>=8.0

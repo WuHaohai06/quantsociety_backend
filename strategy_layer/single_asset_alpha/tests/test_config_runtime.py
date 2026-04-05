@@ -47,7 +47,9 @@ def _write_aggregate_year(
     frame.to_parquet(dataset_dir / f"daily_market_summary_{year}.parquet", index=False)
 
 
-def test_load_config_applies_defaults_and_supports_unquoted_dates(tmp_path: Path):
+def test_load_config_applies_defaults_and_supports_unquoted_dates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    workspace_root = tmp_path / "workspace_data"
+    monkeypatch.setenv("QUANTSOCIETY_WORKSPACE_DATA_ROOT", str(workspace_root))
     config_path = tmp_path / "dual_ma.yaml"
     config_path.write_text(
         "\n".join(
@@ -77,6 +79,8 @@ def test_load_config_applies_defaults_and_supports_unquoted_dates(tmp_path: Path
     assert config.position_mapper.params["shift_bars"] == 1
     assert config.run.start_date == "2024-01-02"
     assert config.run.end_date == "2024-01-10 23:59:59"
+    assert config.market_data.cache_root == str(workspace_root / "cache" / "market_data")
+    assert config.output.output_dir == str(workspace_root / "strategy" / "single_asset_alpha" / "dual_ma_demo_v1")
 
 
 def test_load_config_rejects_factor_threshold_without_factor_source(tmp_path: Path):
@@ -133,7 +137,9 @@ def test_run_from_config_runs_dual_ma_with_mock_market_data(tmp_path: Path):
     assert (tmp_path / "outputs" / "config_snapshot.yaml").exists()
 
 
-def test_run_from_config_supports_factor_lake_factor_threshold(tmp_path: Path):
+def test_run_from_config_supports_factor_lake_factor_threshold(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    workspace_root = tmp_path / "workspace_data"
+    monkeypatch.setenv("QUANTSOCIETY_WORKSPACE_DATA_ROOT", str(workspace_root))
     lake_root = tmp_path / "factor_lake"
     dates = pd.bdate_range("2024-01-01", periods=8, freq="B")
     _write_factor(
@@ -193,7 +199,7 @@ def test_run_from_config_supports_factor_lake_factor_threshold(tmp_path: Path):
     assert result["factor_data"] is not None
     assert list(result["factor_data"].columns) == ["alpha_1", "alpha_2"]
     assert not result["target_position"].empty
-    assert (tmp_path / "outputs" / "config_snapshot.yaml").exists()
+    assert (workspace_root / "strategy" / "single_asset_alpha" / "factor_threshold_runtime_v1" / "config_snapshot.yaml").exists()
 
 
 def test_data_fetcher_loads_aggregate_bars_daily_summary(tmp_path: Path):
@@ -219,7 +225,9 @@ def test_data_fetcher_loads_aggregate_bars_daily_summary(tmp_path: Path):
     assert market_data.iloc[0]["open"] == 12.0
 
 
-def test_run_from_config_supports_aggregate_bars_daily_summary(tmp_path: Path):
+def test_run_from_config_supports_aggregate_bars_daily_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    workspace_root = tmp_path / "workspace_data"
+    monkeypatch.setenv("QUANTSOCIETY_WORKSPACE_DATA_ROOT", str(workspace_root))
     aggregate_root = tmp_path / "aggregate_bars"
     dates = pd.bdate_range("2024-01-01", periods=15, freq="B", tz="UTC")
     rows = []
@@ -267,4 +275,4 @@ def test_run_from_config_supports_aggregate_bars_daily_summary(tmp_path: Path):
     assert list(result["market_data"].columns) == ["open", "high", "low", "close", "volume"]
     assert result["market_data"].index.tz is None
     assert not result["target_position"].empty
-    assert (tmp_path / "outputs" / "config_snapshot.yaml").exists()
+    assert (workspace_root / "strategy" / "single_asset_alpha" / "aggregate_bars_runtime_v1" / "config_snapshot.yaml").exists()

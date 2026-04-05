@@ -16,7 +16,10 @@ def _write_config(path: Path, payload: dict) -> Path:
     return path
 
 
-def test_load_config_supports_unquoted_date_like_run_name_and_relative_paths(tmp_path: Path):
+def test_load_config_supports_unquoted_date_like_run_name_and_relative_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    workspace_root = tmp_path / "workspace_data"
+    monkeypatch.setenv("QUANTSOCIETY_WORKSPACE_DATA_ROOT", str(workspace_root))
+
     holdings_path = tmp_path / "holdings.csv"
     kline_path = tmp_path / "kline.csv"
     pd.DataFrame(
@@ -56,6 +59,7 @@ def test_load_config_supports_unquoted_date_like_run_name_and_relative_paths(tmp
     assert config.meta.run_name == "2024-01-05"
     assert config.inputs.holdings.path == str(holdings_path.resolve())
     assert config.inputs.kline.path == str(kline_path.resolve())
+    assert config.output.output_root == str(workspace_root / "backtests" / "portfolio")
 
 
 def test_run_from_config_builds_artifacts_and_registry_outputs(tmp_path: Path):

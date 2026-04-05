@@ -33,6 +33,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from workspace_paths import default_factor_lake_root
+
 from .catalog import FactorCatalog, compute_ir_hash
 from .exceptions import FactorNotFoundError
 from logging_utils import ProgressLogger, get_logger
@@ -58,8 +60,8 @@ class ParquetMaterializer:
     Parameters
     ----------
     lake_root : str | Path | None
-        落盘根目录。``None`` 时从 ``FACTOR_LAKE_ROOT`` 环境变量获取，
-        缺省为 ``./shared_factor_lake``。
+        落盘根目录。``None`` 时优先读取 ``FACTOR_LAKE_ROOT``，否则落到
+        统一的 ``workspace_data/factors/lake``。
     catalog : FactorCatalog | None
         元数据目录实例。``None`` 时自动在 ``lake_root/_catalog.sqlite`` 创建。
     """
@@ -70,7 +72,7 @@ class ParquetMaterializer:
         catalog: FactorCatalog | None = None,
     ) -> None:
         if lake_root is None:
-            lake_root = os.getenv("FACTOR_LAKE_ROOT", "./shared_factor_lake")
+            lake_root = default_factor_lake_root()
         self._lake_root = Path(lake_root)
         self._lake_root.mkdir(parents=True, exist_ok=True)
 

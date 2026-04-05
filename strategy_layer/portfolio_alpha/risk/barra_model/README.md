@@ -14,8 +14,8 @@
 
 当前这套流程默认使用两类上游输入：
 
-- 因子数据：由 [factor_generate.py](/C:/Users/yixuanwang2/Desktop/to_wyx/to_wyx/quantsociety_backend_project/strategy_layer/portfolio_strategy/risk/barra_model/factor_generate.py) 生成的因子暴露数据，再作为 `barra_data.py` 的因子输入
-- 市值数据：同样由 [factor_generate.py](/C:/Users/yixuanwang2/Desktop/to_wyx/to_wyx/quantsociety_backend_project/strategy_layer/portfolio_strategy/risk/barra_model/factor_generate.py) 产出，再作为 `barra_data.py` 的市值输入
+- 因子数据：由当前目录下的 `factor_generate.py` 生成的因子暴露数据，再作为 `barra_data.py` 的因子输入
+- 市值数据：同样由当前目录下的 `factor_generate.py` 产出的市值数据，再作为 `barra_data.py` 的市值输入
 
 也就是说，当前风险模型和优化流程依赖的是：
 - `factor_generate` 产出的因子截面

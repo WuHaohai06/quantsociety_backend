@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 import yaml
 
+from workspace_paths import default_portfolio_backtest_root
+
 InputFormat = Literal["infer", "csv", "parquet"]
 
 
@@ -58,7 +60,7 @@ class BacktestConfig:
 
 @dataclass(frozen=True)
 class OutputConfig:
-    output_root: str = "results"
+    output_root: str = field(default_factory=lambda: str(default_portfolio_backtest_root()))
 
 
 @dataclass(frozen=True)
@@ -284,11 +286,11 @@ def load_config(path: str | Path) -> PortfolioBacktestConfig:
 
     output = OutputConfig(
         output_root=_resolve_path_text(
-            output_payload.get("output_root") or "results",
+            output_payload.get("output_root"),
             field_name="output.output_root",
             base_dir=base_dir,
         )
-        or str((base_dir / "results").resolve()),
+        or str(default_portfolio_backtest_root()),
     )
 
     registry = RegistryConfig(
