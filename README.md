@@ -71,14 +71,15 @@
 如果你第一次进入这个仓库，建议按下面顺序读：
 
 1. [README.md](README.md)
-2. [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md)
-3. [demo/README.md](demo/README.md)
-4. [factor_layer/README.md](factor_layer/README.md)
-5. [strategy_layer/README.md](strategy_layer/README.md)
-6. [backtest_layer/README.md](backtest_layer/README.md)
-7. [raw_data_layer/README.md](raw_data_layer/README.md)
-8. [IMPLEMENTED_WORKFLOWS.md](IMPLEMENTED_WORKFLOWS.md)
-9. [WORKFLOW_OVERVIEW.md](WORKFLOW_OVERVIEW.md)
+2. [PM_PROJECT_OVERVIEW.md](PM_PROJECT_OVERVIEW.md)
+3. [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md)
+4. [demo/README.md](demo/README.md)
+5. [factor_layer/README.md](factor_layer/README.md)
+6. [strategy_layer/README.md](strategy_layer/README.md)
+7. [backtest_layer/README.md](backtest_layer/README.md)
+8. [raw_data_layer/README.md](raw_data_layer/README.md)
+9. [IMPLEMENTED_WORKFLOWS.md](IMPLEMENTED_WORKFLOWS.md)
+10. [WORKFLOW_OVERVIEW.md](WORKFLOW_OVERVIEW.md)
 
 ## 环境与测试
 
