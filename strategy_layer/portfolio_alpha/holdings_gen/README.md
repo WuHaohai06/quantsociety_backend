@@ -46,12 +46,29 @@ strategy_layer/portfolio_alpha/holdings_gen/examples/from_composite_signal.yaml
 - construction.selection_mode: selected_flag 或 all
 - construction.weighting_method: equal 或 score_proportional
 - construction.long_budget / short_budget: 多头和空头预算
-- optimizer / risk_control: 当前默认 noop，后续可扩展
+- optimizer.enabled / optimizer.name: 关闭时走原始权重；开启后可用 Barra 均值-方差优化
+- optimizer.params:
+  - barra_dir 或 factor_covariance_path / specific_risk_path / factor_exposure_path
+  - ic（默认 0.05）
+  - risk_aversion（默认 2.0）
+  - name_cap（默认 0.05）
+  - winsor_q（默认 0.01）
+  - long_budget / short_budget（可覆盖 construction 中的预算）
+  - sigma_mkt（可选；不填则按当日 specific risk 估计）
+  - strict / fallback_to_input_on_fail（控制缺失 Barra 数据时的行为)
+- risk_control.enabled / risk_control.name: 当前默认 noop，后续可扩展
 - output.root: 输出目录
 
-## 扩展点
+## Barra 优化模式
 
-- optimizer.py: 预留组合优化器入口，未来可接入 Barra 或约束优化
-- risk_control.py: 预留风控器入口，未来可接入行业/风格/单票约束
+当 `optimizer.enabled=true` 且 `optimizer.name=barra`（或 `barra_mean_variance_ls`）时，`holdings_gen` 会在每个交易日上：
 
-当前如果把 optimizer.enabled 或 risk_control.enabled 打开，并填入非 noop 名称，会明确抛出 NotImplementedError，避免静默跑偏。
+1. 对当日 alpha 做 winsorize + 横截面 Z-score
+2. 按 `mu = zscore(alpha) * sigma_mkt * IC` 生成预期收益
+3. 读取 Barra 的 `factor_covariance.parquet`、`specific_risk.parquet`、`cleaned_factors.parquet`
+4. 使用 CVXPY 求解均值-方差优化：
+   - long/short 约束
+   - 单票上限（默认 5%）
+   - 风险项使用 Barra 因子协方差 + 特异性风险
+
+如果 Barra 输入不完整，默认会回退为原始 holdings 权重；也可以通过 `strict=true` 让它直接报错。

@@ -12,18 +12,40 @@
 
 ## 当前数据来源
 
-当前这套流程默认使用两类上游输入：
+当前流程支持两种输入方式：
 
-- 因子数据：由当前目录下的 `factor_generate.py` 生成的因子暴露数据，再作为 `barra_data.py` 的因子输入
-- 市值数据：同样由当前目录下的 `factor_generate.py` 产出的市值数据，再作为 `barra_data.py` 的市值输入
+- `file` 模式：继续接受手工传入的因子、行情和市值 parquet
+- `project` 模式：从主工程真实数据自动接入，再转换成 Barra 需要的三张标准表
 
-也就是说，当前风险模型和优化流程依赖的是：
-- `factor_generate` 产出的因子截面
-- `factor_generate` 产出的 market cap 数据
+其中 `project` 模式会使用：
+
+- 因子数据：factor lake 中的真实因子暴露
+- 行情数据：`daily_market_summary`，字段映射为 `align_time / ticker / c`
+- 市值数据：`stocks_floats` 中的流通股本，按 `market_cap = stock_float * close` 计算
 
 ## 当前工作流
 
-### 1. 数据层：`barra_data.py`
+### 1. 数据接入层：`project_inputs.py`
+
+职责：
+- 从主工程真实数据读取因子、行情和 float shares
+- 将输入转换为 Barra 所需的原始 schema
+- 产出三张表：
+  - 因子表：`datetime + asset + factor columns`
+  - 行情表：`align_time + ticker + c`
+  - 市值表：`datetime + asset + market_cap`
+
+主要逻辑：
+- 因子 lake 读取使用 `strategy_layer.data.build_factor_panel`
+- 行情表按 `ticker` 和日期排序，保留 `close` 作为 `c`
+- float shares 表按 `effective_date` 向后对齐到行情日期
+- 市值按 `stock_float * close` 计算
+- 统一资产代码大写、去空白，统一日期格式
+
+输出：
+- 适配前的原始 Barra 输入表（供 `barra_data.py` 继续清洗和对齐）
+
+### 2. 数据层：`barra_data.py`
 
 输入：
 - 原始因子 parquet
@@ -42,7 +64,7 @@
 - `cleaned_returns.parquet`
 - `cleaned_market_cap.parquet`
 
-### 2. 风险层：`barra_risk.py`
+### 3. 风险层：`barra_risk.py`
 
 输入：
 - `cleaned_factors.parquet`
@@ -59,14 +81,16 @@
   - `specific_returns`
 - 因子协方差矩阵 `F`
   - 使用全历史 `factor_returns`
-  - 采用 `EWMA`
-  - 年化乘 `252`
+  - 采用 `EWMA + Newey-West` 调整
+  - `barra_risk` 输出日化口径 `factor_covariance.parquet`
+  - benchmark 消费时按年化口径使用
 - 特异性方差 `Δ`
   - 使用全历史 `specific_returns`
   - 对每只股票做 expanding std，到最新日为止
   - 仅输出最新交易日截面
   - 对缺失资产用最新截面中位数填充
-  - 最终存的是年化特异性方差：`std^2 * 252`
+  - `barra_risk` 输出日化口径 `specific_risk.parquet`
+  - benchmark 消费时按年化口径使用
 
 输出：
 - `factor_returns.parquet`
@@ -74,17 +98,18 @@
 - `specific_returns.parquet`
 - `specific_risk.parquet`
 
-### 3. 风险调度层：`barra_model_run.py`
+### 4. 风险调度层：`barra_model_run.py`
 
 职责：
-- 串起 `barra_data.py` 和 `barra_risk.py`
+- 串起 `project_inputs.py`、`barra_data.py` 和 `barra_risk.py`
+- 支持 `file` / `project` 双模式运行
 - 一次性产出最新截面优化所需的全部风险文件
 
 当前模式：
-- 不再做历史总风险聚合
-- 只负责生成“最新可交易截面”的风险参数
+- `file`：继续支持已有的显式输入 parquet
+- `project`：自动从主工程数据生成 Barra 原始输入，再进入标准清洗和风险链路
 
-### 4. Benchmark 风险：`benchmark_total_risk.py`
+### 5. Benchmark 风险：`benchmark_total_risk.py`
 
 职责：
 - 计算最新交易日全市场市值加权 benchmark 的总风险
@@ -110,8 +135,7 @@ sigma = sqrt(sigma^2)
 - 控制台打印 benchmark 年化总风险
 - `benchmark_total_risk.txt`
 
-
-### 5. Alpha 层：`alpha_generate.py`
+### 6. Alpha 层：`alpha_generate.py`
 
 输入：
 - `cleaned_factors.parquet`
@@ -136,7 +160,7 @@ Raw_Alpha = 0.4 * Value + 0.4 * Momentum - 0.2 * Size
 - `asset`
 - `expected_ret`
 
-### 6. 优化层：`optimization.py`
+### 7. 优化层：`optimization.py`
 
 输入均来自 `work_dir`：
 - `alpha_vector.parquet`
@@ -175,23 +199,34 @@ sigma^2 = (X^T w)^T F (X^T w) + sum(w_i^2 * delta_i)
 - `asset`
 - `weight`
 
-
 ## 推荐运行顺序
 
-### 第一步：生成风险参数
+### 文件模式
 
 ```bash
-python barra_model_run.py
+python barra_model_run.py \
+  --mode file \
+  --factor-path /path/to/factors.parquet \
+  --market-path /path/to/market.parquet \
+  --cap-path /path/to/market_cap.parquet \
+  --output-dir /path/to/output
 ```
 
-产出：
-- `cleaned_factors.parquet`
-- `cleaned_returns.parquet`
-- `cleaned_market_cap.parquet`
-- `factor_returns.parquet`
-- `factor_covariance.parquet`
-- `specific_returns.parquet`
-- `specific_risk.parquet`
+### 主工程数据模式
+
+```bash
+python barra_model_run.py \
+  --mode project \
+  --factor-lake-root /path/to/factor_lake \
+  --aggregate-bars-root /path/to/aggregate_bars \
+  --stocks-floats-root /path/to/stocks_floats \
+  --factor-ref value_factor_v1:Value \
+  --factor-ref momentum_factor_v1:Momentum \
+  --factor-ref size_factor_v1:Size \
+  --start 2024-01-01 \
+  --end 2024-12-31 \
+  --output-dir /path/to/output
+```
 
 ### 第二步：计算 benchmark 风险
 
@@ -233,6 +268,8 @@ python optimization.py
   风险估计层
 - `barra_model_run.py`
   风险模型总调度入口
+- `project_inputs.py`
+  主工程真实数据接入与字段转换层
 - `benchmark_total_risk.py`
   benchmark 年化总风险计算
 - `optimization.py`
@@ -243,10 +280,10 @@ python optimization.py
 ## 当前产物口径
 
 - `factor_covariance.parquet`
-  年化因子协方差矩阵，基于全历史 `factor_returns` 的 EWMA 估计
+  日化因子协方差矩阵，基于全历史 `factor_returns` 的 `EWMA + Newey-West` 估计
 
 - `specific_risk.parquet`
-  最新交易日截面的年化特异性方差，不是波动率，也不是全历史面板
+  最新交易日截面的日化特异性方差，不是波动率，也不是全历史面板
 
 - `alpha_vector.parquet`
   最新交易日截面的预期收益向量
@@ -267,5 +304,7 @@ python optimization.py
 
 - `alpha_generate.py` 依赖 `cleaned_factors.parquet` 中存在 `Value / Momentum / Size`
 - `optimization.py` 与 `benchmark_total_risk.py` 都依赖 `specific_risk.parquet` 已经生成
-- 当前优化器和 benchmark 脚本默认读取 `C:\Users\yixuanwang2\Desktop\to_wyx\to_wyx`
-- 若切换实验目录，请优先修改对应脚本中的默认路径或显式传入 `work_dir`
+- `project` 模式下需要保证：
+  - 因子 lake 可读
+  - `daily_market_summary` 里有 `align_time / ticker / c` 或 `close`
+  - `stocks_floats` 里至少有 `effective_date / ticker / free_float`、`stock_float` 或 `outstanding_shares`

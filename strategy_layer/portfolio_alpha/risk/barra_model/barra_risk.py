@@ -23,8 +23,11 @@ class BarraRiskEngine:
     2. Drop rows with missing next_ret or market_cap synchronously.
     3. For each date, winsorize and z-score factor exposures.
     4. Estimate daily factor returns with WLS using sqrt(market_cap).
-    5. Build annualized factor covariance from the full factor-return history with EWMA.
+    5. Build daily factor covariance with EWMA weights plus Newey-West adjustment.
     6. Store WLS residuals and output only the latest-date specific risk cross-section.
+
+    All persisted risk outputs in this engine are daily-frequency objects.
+    Annualized reporting is handled by benchmark consumers.
     """
 
     def __init__(
@@ -265,26 +268,28 @@ class BarraRiskEngine:
         latest_median = latest_specific_risk["specific_std_daily"].median()
         latest_specific_risk["specific_std_daily"] = latest_specific_risk["specific_std_daily"].fillna(latest_median)
         latest_specific_risk["specific_std_daily"] = latest_specific_risk["specific_std_daily"].fillna(0.0)
-        latest_specific_risk["specific_var_annual"] = (
-            latest_specific_risk["specific_std_daily"].astype("float32") ** 2 * 252.0
+        latest_specific_risk["specific_var_daily"] = (
+            latest_specific_risk["specific_std_daily"].astype("float32") ** 2
         ).astype("float32")
 
-        self.specific_risk = latest_specific_risk.loc[:, [self.asset_column, "specific_var_annual"]].copy()
+        self.specific_risk = latest_specific_risk.loc[:, [self.asset_column, "specific_var_daily"]].copy()
         return self.factor_returns
 
     def estimate_covariance(
         self,
         *,
         half_life: int = 63,
-        annualization: int = 252,
+        lags: int = 2,
     ) -> pd.DataFrame:
         if self.factor_returns is None:
             raise ValueError("Run run_regression() before estimate_covariance().")
         if half_life <= 0:
             raise ValueError("half_life must be positive.")
+        if lags < 0:
+            raise ValueError("lags must be non-negative.")
 
-        F = self.factor_returns.to_numpy(dtype=np.float64, copy=False)
-        n_obs = F.shape[0]
+        factor_returns = self.factor_returns.to_numpy(dtype=np.float64, copy=False)
+        n_obs = factor_returns.shape[0]
         if n_obs <= 1:
             raise ValueError("At least two factor return observations are required.")
 
@@ -292,14 +297,20 @@ class BarraRiskEngine:
         weights = decay ** np.arange(n_obs - 1, -1, -1, dtype=np.float64)
         weights /= weights.sum()
 
-        ewma_mean = np.average(F, axis=0, weights=weights)
-        centered = F - ewma_mean
+        weighted_mean = np.average(factor_returns, axis=0, weights=weights)
+        centered = factor_returns - weighted_mean
         weighted_centered = centered * np.sqrt(weights[:, None])
-        ewma_cov = weighted_centered.T @ weighted_centered
-        combined_cov = ewma_cov * float(annualization)
 
+        covariance_daily = weighted_centered.T @ weighted_centered
+        effective_lags = min(int(lags), n_obs - 1)
+        for lag in range(1, effective_lags + 1):
+            bartlett_weight = 1.0 - (lag / (lags + 1.0))
+            lagged_covariance = weighted_centered[lag:].T @ weighted_centered[:-lag]
+            covariance_daily += bartlett_weight * (lagged_covariance + lagged_covariance.T)
+
+        covariance_daily = 0.5 * (covariance_daily + covariance_daily.T)
         self.factor_covariance = pd.DataFrame(
-            combined_cov.astype("float32"),
+            covariance_daily.astype("float32"),
             index=self.factor_columns,
             columns=self.factor_columns,
         )
@@ -310,10 +321,10 @@ class BarraRiskEngine:
         *,
         min_obs: int | None = None,
         half_life: int = 63,
-        annualization: int = 252,
+        lags: int = 2,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         factor_returns = self.run_regression(min_obs=min_obs)
-        covariance = self.estimate_covariance(half_life=half_life, annualization=annualization)
+        covariance = self.estimate_covariance(half_life=half_life, lags=lags)
         if self.specific_returns is None:
             raise ValueError("Specific returns were not generated.")
         return factor_returns, covariance, self.specific_returns

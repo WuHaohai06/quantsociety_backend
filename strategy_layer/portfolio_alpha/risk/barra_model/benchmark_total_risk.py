@@ -37,8 +37,8 @@ def compute_benchmark_total_risk(
         raise FileNotFoundError("Missing required input files:\n" + "\n".join(missing_files))
 
     exposures = pd.read_parquet(factor_path).copy()
-    factor_covariance = pd.read_parquet(factor_covariance_path).copy()
-    specific_risk = pd.read_parquet(specific_risk_path).copy()
+    factor_covariance_daily = pd.read_parquet(factor_covariance_path).copy()
+    specific_risk_daily = pd.read_parquet(specific_risk_path).copy()
     market_cap = pd.read_parquet(market_cap_path).copy()
 
     exposures["date"] = pd.to_datetime(exposures["date"], errors="coerce").dt.date
@@ -51,10 +51,10 @@ def compute_benchmark_total_risk(
     market_cap["market_cap"] = pd.to_numeric(market_cap["market_cap"], errors="coerce")
     latest_market_cap = market_cap.loc[market_cap["date"] == latest_date, ["asset", "market_cap"]].copy()
 
-    specific_risk["asset"] = specific_risk["asset"].astype("string").str.strip().str.upper()
-    specific_risk["specific_var_annual"] = pd.to_numeric(specific_risk["specific_var_annual"], errors="coerce")
+    specific_risk_daily["asset"] = specific_risk_daily["asset"].astype("string").str.strip().str.upper()
+    specific_risk_daily["specific_var_daily"] = pd.to_numeric(specific_risk_daily["specific_var_daily"], errors="coerce")
 
-    factor_cols = factor_covariance.columns.tolist()
+    factor_cols = factor_covariance_daily.columns.tolist()
     missing_factor_cols = [column for column in factor_cols if column not in latest_exposures.columns]
     if missing_factor_cols:
         raise KeyError(f"Missing factor exposure columns required by covariance matrix: {missing_factor_cols}")
@@ -66,7 +66,7 @@ def compute_benchmark_total_risk(
         validate="one_to_one",
     )
     cross_section = cross_section.merge(
-        specific_risk.loc[:, ["asset", "specific_var_annual"]],
+        specific_risk_daily.loc[:, ["asset", "specific_var_daily"]],
         on="asset",
         how="left",
         validate="one_to_one",
@@ -77,13 +77,13 @@ def compute_benchmark_total_risk(
     if cross_section.empty:
         raise ValueError(f"No valid market cap weights found for latest date {latest_date}.")
 
-    cross_section["specific_var_annual"] = pd.to_numeric(
-        cross_section["specific_var_annual"],
+    cross_section["specific_var_daily"] = pd.to_numeric(
+        cross_section["specific_var_daily"],
         errors="coerce",
     )
-    median_specific_risk = cross_section["specific_var_annual"].median()
-    cross_section["specific_var_annual"] = cross_section["specific_var_annual"].fillna(median_specific_risk)
-    cross_section["specific_var_annual"] = cross_section["specific_var_annual"].fillna(0.0)
+    median_specific_risk = cross_section["specific_var_daily"].median()
+    cross_section["specific_var_daily"] = cross_section["specific_var_daily"].fillna(median_specific_risk)
+    cross_section["specific_var_daily"] = cross_section["specific_var_daily"].fillna(0.0)
 
     total_market_cap = float(cross_section["market_cap"].sum())
     if not np.isfinite(total_market_cap) or total_market_cap <= 0:
@@ -91,12 +91,12 @@ def compute_benchmark_total_risk(
 
     w_mkt = cross_section["market_cap"].to_numpy(dtype=np.float64) / total_market_cap
     X = cross_section.loc[:, factor_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy(dtype=np.float64)
-    F = factor_covariance.loc[factor_cols, factor_cols].to_numpy(dtype=np.float64)
-    delta = cross_section["specific_var_annual"].to_numpy(dtype=np.float64)
+    F_annual = factor_covariance_daily.loc[factor_cols, factor_cols].to_numpy(dtype=np.float64) * 252.0
+    delta_annual = cross_section["specific_var_daily"].to_numpy(dtype=np.float64) * 252.0
 
     benchmark_factor_exposure = w_mkt @ X
-    systematic_variance = float(benchmark_factor_exposure @ F @ benchmark_factor_exposure.T)
-    specific_variance = float(np.sum((w_mkt ** 2) * delta))
+    systematic_variance = float(benchmark_factor_exposure @ F_annual @ benchmark_factor_exposure.T)
+    specific_variance = float(np.sum((w_mkt ** 2) * delta_annual))
     total_variance = max(systematic_variance + specific_variance, 0.0)
     benchmark_sigma = float(np.sqrt(total_variance))
 
